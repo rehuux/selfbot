@@ -1,4 +1,4 @@
-# 🤖 Telegram SelfBot — by Syed Rehan
+# 🤖 Telegram SelfBot by Syed Rehan
 
 A production-ready Telegram **userbot (selfbot)** built with [Telethon](https://github.com/LonamiWebs/Telethon), featuring group/DM moderation tools, broadcasting utilities, OSINT lookups, and a smart **AFK auto-reply system** — deployable on [Render](https://render.com) with zero manual setup after the first run.
 
