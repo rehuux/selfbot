@@ -1,0 +1,58 @@
+Custom Attribution License (Based on MIT)
+Copyright (c) 2026 Syed Rehan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+1. ATTRIBUTION REQUIRED
+   The above copyright notice, this permission notice, and clear credit to
+   the original author — "Syed Rehan" (https://rehuhoonywaar.vercel.app) —
+   must be retained in:
+     a) all copies or substantial portions of the Software, and
+     b) any derivative work, fork, modification, or redistribution of the
+        Software, whether the source code is changed or not.
+
+   Credit must be visible in at least one of the following places in any
+   public release or redistribution: the README file, the source code
+   header comments, an in-app "About"/"Credits" section, or equivalent
+   user-facing documentation. Removing, hiding, or replacing the original
+   author's credit while distributing the Software or a derivative of it
+   is a violation of this license.
+
+2. MODIFICATION IS PERMITTED
+   You are free to copy, modify, extend, rebrand the user interface,
+   translate, and build upon this Software for personal, educational, or
+   commercial use, as long as the attribution requirement above is honored.
+
+3. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+4. RESPONSIBLE USE
+   This Software automates a personal Telegram user account. The author
+   provides no guarantee regarding compliance with Telegram's Terms of
+   Service and accepts no responsibility for account restrictions, bans,
+   data loss, or any other consequence resulting from the use, misuse, or
+   modification of this Software. Users are solely responsible for ensuring
+   their use of the Software complies with applicable platform policies and
+   laws.
+
+5. NO ENDORSEMENT
+   Use of the author's name or credit as required above does not imply that
+   the author endorses, supports, or is affiliated with any derivative
+   project unless explicitly stated by the author.
+
+---
+Summary (not a substitute for the terms above):
+✔ Free to use, copy, modify, and distribute — personal or commercial
+✔ You may fork it, rebrand it, extend it
+✘ You may NOT remove or hide credit to the original author, Syed Rehan
+✘ Provided with no warranty — use at your own risk
