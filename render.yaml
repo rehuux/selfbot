@@ -14,6 +14,12 @@ services:
         sync: false
       - key: VIRUSTOTAL_API_KEY
         sync: false
+      - key: SECRET_MASTER_PASSWORD
+        sync: false
+      - key: ETHERSCAN_API_KEY
+        sync: false
+      - key: BSCSCAN_API_KEY
+        sync: false
       - key: PORT
         value: 8080
     autoDeploy: true
