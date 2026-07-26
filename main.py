@@ -2,6 +2,10 @@ import os
 import re
 import json
 import time
+import socket
+import ssl
+import shutil
+import datetime
 import asyncio
 import random
 import logging
@@ -51,6 +55,40 @@ try:
 except ImportError:
     LANGDETECT_OK = False
 
+# --- New feature dependencies (all optional — bot degrades gracefully) ---
+try:
+    import yt_dlp
+    YTDLP_OK = True
+except ImportError:
+    YTDLP_OK = False
+
+FFMPEG_OK = shutil.which("ffmpeg") is not None
+
+try:
+    import dns.resolver
+    DNS_OK = True
+except ImportError:
+    DNS_OK = False
+
+try:
+    import whois as pywhois
+    WHOIS_OK = True
+except ImportError:
+    WHOIS_OK = False
+
+try:
+    import easyocr
+    EASYOCR_OK = True
+except ImportError:
+    EASYOCR_OK = False
+
+try:
+    import pytesseract
+    from PIL import Image
+    TESSERACT_OK = True
+except ImportError:
+    TESSERACT_OK = False
+
 # ------------------------------------------------------------------
 # Environment / config
 # ------------------------------------------------------------------
@@ -66,15 +104,52 @@ ERROR_LOG_FILE = "errors.log"
 
 # Developer / owner info shown by .dev
 DEV_NAME = "Syed Rehan"
-DEV_ROLE = "CyberSecurity Researcher & Ethical Hacker"
-DEV_PORTFOLIO = "https://rehuux.vercel.app"
+DEV_ROLE = "Freelance Developer & Ethical Hacker"
+DEV_PORTFOLIO = "https://rehuhoonywaar.vercel.app"
 DEV_SKILLS = (
-    "Security Researcher, Telegram Bot Development, "
-    "Security/OSINT, Full-Stack Dev, and AI Integration"
+    "Frontend Web Development, Telegram Bot Development, "
+    "Security/OSINT, UI/UX Design, and AI Integration"
 )
 
 # Spam command safety cap — prevents accidental account-flagging floods
 SPAM_MAX_REPEATS = 20
+
+# --- New feature config ---
+TEMP_DIR = "selfbot_temp"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+PORTFOLIO_FILE = "portfolio_data.json"
+
+DISPOSABLE_EMAIL_DOMAINS = {
+    "mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com",
+    "yopmail.com", "trashmail.com", "throwawaymail.com", "fakeinbox.com",
+    "getnada.com", "sharklasers.com",
+}
+
+USERNAME_CHECK_SITES = {
+    "GitHub": "https://github.com/{u}",
+    "Instagram": "https://www.instagram.com/{u}/",
+    "Twitter/X": "https://x.com/{u}",
+    "Reddit": "https://www.reddit.com/user/{u}",
+    "Telegram": "https://t.me/{u}",
+    "TikTok": "https://www.tiktok.com/@{u}",
+}
+
+
+def load_portfolio():
+    try:
+        with open(PORTFOLIO_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_portfolio(p):
+    with open(PORTFOLIO_FILE, "w") as f:
+        json.dump(p, f)
+
+
+portfolio = load_portfolio()
 
 
 def load_data():
@@ -492,8 +567,537 @@ def _random_joke():
         return f"❌ Couldn't fetch a joke: {e}"
 
 
+# ==========================================================================
+# NEW FEATURE: MUSIC DOWNLOADER (.music)
+# ==========================================================================
+def _download_music(query):
+    """Search YouTube via yt-dlp and download best audio as mp3.
+    Returns a dict with file paths + metadata, or {"error": ...} on failure.
+    """
+    if not YTDLP_OK:
+        return {"error": "ytdlp_missing"}
+    if not FFMPEG_OK:
+        return {"error": "ffmpeg_missing"}
+
+    out_template = os.path.join(TEMP_DIR, f"{uuid4().hex}.%(ext)s")
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_template,
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "default_search": "ytsearch1",
+        "socket_timeout": 20,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320",
+        }],
+        "writethumbnail": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=True)
+            if info is None:
+                return {"error": "not_found"}
+            if "entries" in info:
+                entries = [e for e in info["entries"] if e]
+                if not entries:
+                    return {"error": "not_found"}
+                info = entries[0]
+
+            base = ydl.prepare_filename(info)
+            mp3_path = os.path.splitext(base)[0] + ".mp3"
+            thumb_path = None
+            for ext in ("jpg", "webp", "png"):
+                candidate = os.path.splitext(base)[0] + f".{ext}"
+                if os.path.exists(candidate):
+                    thumb_path = candidate
+                    break
+
+            if not os.path.exists(mp3_path):
+                return {"error": "not_found"}
+
+            return {
+                "mp3_path": mp3_path,
+                "thumb_path": thumb_path,
+                "title": info.get("title", "Unknown"),
+                "artist": info.get("uploader") or info.get("artist") or "Unknown",
+                "duration": info.get("duration", 0) or 0,
+                "album": info.get("album"),
+            }
+    except Exception as e:
+        log_error(".music download", e)
+        return {"error": f"download_failed: {e}"}
+
+
+def _cleanup_music_files(result):
+    for key in ("mp3_path", "thumb_path"):
+        p = result.get(key) if result else None
+        if p and os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+
+# ==========================================================================
+# NEW FEATURE: MESSAGE SCHEDULER (.schedule)
+# ==========================================================================
+def _parse_schedule(raw_args):
+    """Parse '<time> <message>' into (send_at_datetime, message) or None.
+    Supports: 30s / 30m / 2h / 1d (relative) and 'YYYY-MM-DD HH:MM message'.
+    """
+    parts = raw_args.split(None, 1)
+    if len(parts) < 2:
+        return None
+    time_part, rest = parts[0], parts[1]
+    now = datetime.datetime.now()
+
+    # Relative duration: 30s, 30m, 2h, 1d
+    m = re.match(r"^(\d+)(s|m|h|d)$", time_part.lower())
+    if m:
+        value, unit = int(m.group(1)), m.group(2)
+        unit_map = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+        delta = datetime.timedelta(**{unit_map[unit]: value})
+        return now + delta, rest
+
+    # Absolute date + time: "2026-08-01 09:00 Hello"
+    rest_parts = rest.split(None, 1)
+    if len(rest_parts) == 2:
+        maybe_time, message = rest_parts
+        try:
+            dt = datetime.datetime.strptime(f"{time_part} {maybe_time}", "%Y-%m-%d %H:%M")
+            return dt, message
+        except ValueError:
+            pass
+
+    return None
+
+
+async def _run_scheduled_send(chat_id, message, delay):
+    """Background task: sleeps until send time then delivers the message."""
+    try:
+        await asyncio.sleep(delay)
+        await client.send_message(chat_id, message)
+    except Exception as e:
+        log_error("scheduled_send", e)
+
+
+# ==========================================================================
+# NEW FEATURE: OSINT TOOLKIT (.osint email / username / domain)
+# ==========================================================================
+def _osint_email(email):
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return "❌ Invalid email format."
+    domain = email.rsplit("@", 1)[1]
+    out = [f"📧 **Email OSINT — {email}**"]
+
+    mx_hosts = []
+    if DNS_OK:
+        try:
+            answers = dns.resolver.resolve(domain, "MX", lifetime=8)
+            mx_hosts = sorted(str(r.exchange).rstrip(".") for r in answers)
+            out.append(f"✓ **MX Records:** `{', '.join(mx_hosts[:3]) or 'None'}`")
+        except Exception:
+            out.append("✓ **MX Records:** `None found`")
+    else:
+        out.append("✓ **MX Records:** `dnspython not installed`")
+
+    smtp_result = "Unknown (could not verify)"
+    if mx_hosts:
+        try:
+            import smtplib
+            server = smtplib.SMTP(timeout=8)
+            server.connect(mx_hosts[0])
+            server.helo("gmail.com")
+            server.mail("verify@gmail.com")
+            code, _resp = server.rcpt(email)
+            smtp_result = "Deliverable ✅" if code == 250 else f"Rejected (code {code})"
+            server.quit()
+        except Exception:
+            smtp_result = "Unknown (mail server blocked verification)"
+    out.append(f"✓ **SMTP Check:** `{smtp_result}`")
+
+    is_disposable = domain.lower() in DISPOSABLE_EMAIL_DOMAINS
+    try:
+        r = requests.get(f"https://open.kickbox.com/v1/disposable/{domain}", timeout=8)
+        if r.status_code == 200:
+            is_disposable = r.json().get("disposable", is_disposable)
+    except Exception:
+        pass
+    out.append(f"✓ **Disposable:** `{'Yes ⚠️' if is_disposable else 'No'}`")
+    out.append(f"✓ **Domain:** `{domain}`")
+    return "\n".join(out)
+
+
+def _osint_username(username):
+    out = [f"👤 **Username OSINT — {username}**"]
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for site, url_tpl in USERNAME_CHECK_SITES.items():
+        url = url_tpl.format(u=username)
+        found = False
+        try:
+            r = requests.get(url, headers=headers, timeout=8, allow_redirects=True)
+            found = r.status_code == 200
+        except Exception:
+            found = False
+        out.append(f"{'✅' if found else '❌'} **{site}:** {url}")
+    return "\n".join(out)
+
+
+def _osint_domain(domain):
+    domain = domain.replace("https://", "").replace("http://", "").split("/")[0].strip()
+    out = [f"🌐 **Domain OSINT — {domain}**"]
+
+    ip_addr = None
+    try:
+        ip_addr = socket.gethostbyname(domain)
+        out.append(f"✓ **IP:** `{ip_addr}`")
+    except Exception:
+        out.append("✓ **IP:** `Could not resolve`")
+
+    if DNS_OK:
+        for rtype in ("A", "NS", "TXT"):
+            try:
+                answers = dns.resolver.resolve(domain, rtype, lifetime=8)
+                vals = [str(a) for a in answers][:3]
+                out.append(f"✓ **{rtype} Records:** `{', '.join(vals)}`")
+            except Exception:
+                pass
+    else:
+        out.append("✓ **DNS:** `dnspython not installed`")
+
+    if WHOIS_OK:
+        try:
+            w = pywhois.whois(domain)
+            out.append(f"✓ **Registrar:** `{w.registrar or 'N/A'}`")
+            out.append(f"✓ **Created:** `{w.creation_date}`")
+            out.append(f"✓ **Expires:** `{w.expiration_date}`")
+        except Exception:
+            out.append("✓ **WHOIS:** `Lookup failed`")
+    else:
+        out.append("✓ **WHOIS:** `python-whois not installed`")
+
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((domain, 443), timeout=8) as sock:
+            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
+                cert = ssock.getpeercert()
+                issuer = dict(x[0] for x in cert.get("issuer", []))
+                out.append(f"✓ **SSL Issuer:** `{issuer.get('organizationName', 'N/A')}`")
+                out.append(f"✓ **SSL Expiry:** `{cert.get('notAfter', 'N/A')}`")
+    except Exception:
+        out.append("✓ **SSL:** `Could not verify`")
+
+    if ip_addr:
+        try:
+            r = requests.get(f"http://ip-api.com/json/{ip_addr}", timeout=8)
+            d = r.json()
+            if d.get("status") == "success":
+                out.append(f"✓ **Hosting/ISP:** `{d.get('isp', 'N/A')}`")
+                out.append(f"✓ **Location:** `{d.get('city', '')}, {d.get('country', '')}`")
+        except Exception:
+            pass
+
+    try:
+        r = requests.get(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=10)
+        if r.status_code == 200:
+            entries = r.json()
+            subs = sorted(set(e["name_value"].split("\n")[0] for e in entries))[:8]
+            if subs:
+                out.append(f"✓ **Subdomains (sample):** `{', '.join(subs)}`")
+    except Exception:
+        pass
+
+    return "\n".join(out)
+
+
+# ==========================================================================
+# NEW FEATURE: IP LOOKUP (.ip)
+# ==========================================================================
+def _ip_lookup(ip):
+    try:
+        r = requests.get(
+            f"http://ip-api.com/json/{ip}"
+            "?fields=status,message,country,regionName,city,isp,timezone,lat,lon,as,proxy,query",
+            timeout=10,
+        )
+        d = r.json()
+        if d.get("status") != "success":
+            return f"❌ Lookup failed: {d.get('message', 'unknown error')}"
+        maps_link = f"https://www.google.com/maps?q={d['lat']},{d['lon']}"
+        vpn = "Yes ⚠️" if d.get("proxy") else "Not detected"
+        return f"""🌍 **IP Lookup — {d['query']}**
+✓ **Country:** `{d.get('country', 'N/A')}`
+✓ **Region:** `{d.get('regionName', 'N/A')}`
+✓ **City:** `{d.get('city', 'N/A')}`
+✓ **ISP:** `{d.get('isp', 'N/A')}`
+✓ **ASN:** `{d.get('as', 'N/A')}`
+✓ **Timezone:** `{d.get('timezone', 'N/A')}`
+✓ **Coordinates:** `{d.get('lat')}, {d.get('lon')}`
+✓ **VPN/Proxy:** `{vpn}`
+✓ **Map:** {maps_link}"""
+    except requests.exceptions.Timeout:
+        return "❌ IP lookup timed out."
+    except Exception as e:
+        return f"❌ IP lookup failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: SCAM URL DETECTOR (.scan)
+# ==========================================================================
+def _scan_url(url):
+    if not url.startswith("http"):
+        url = "https://" + url
+    score = 0
+    reasons = []
+    hostname = url.split("//")[-1].split("/")[0].split(":")[0]
+
+    if url.startswith("https://"):
+        reasons.append("✅ Uses HTTPS")
+    else:
+        score += 20
+        reasons.append("⚠️ No HTTPS")
+
+    final_url = url
+    try:
+        r = requests.get(url, timeout=10, allow_redirects=True)
+        redirect_count = len(r.history)
+        final_url = r.url
+        if redirect_count > 2:
+            score += 15
+            reasons.append(f"⚠️ {redirect_count} redirects")
+        else:
+            reasons.append(f"✅ {redirect_count} redirect(s)")
+    except requests.exceptions.Timeout:
+        score += 10
+        reasons.append("⚠️ Site timed out")
+    except Exception:
+        score += 10
+        reasons.append("⚠️ Site unreachable")
+
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=8) as sock:
+            with ctx.wrap_socket(sock, server_hostname=hostname):
+                pass
+        reasons.append("✅ Valid SSL certificate")
+    except Exception:
+        score += 20
+        reasons.append("⚠️ SSL certificate issue")
+
+    if WHOIS_OK:
+        try:
+            w = pywhois.whois(hostname)
+            created = w.creation_date
+            if isinstance(created, list):
+                created = created[0]
+            if created:
+                age_days = (datetime.datetime.now() - created).days
+                if age_days < 180:
+                    score += 25
+                    reasons.append(f"⚠️ Domain is new ({age_days} days old)")
+                else:
+                    reasons.append(f"✅ Domain age: {age_days} days")
+        except Exception:
+            reasons.append("ℹ️ Could not verify domain age")
+    else:
+        reasons.append("ℹ️ python-whois not installed — skipping domain age check")
+
+    suspicious_words = ["login", "verify", "secure", "account", "update", "free", "bonus", "win"]
+    hits = [w for w in suspicious_words if w in url.lower()]
+    if hits:
+        score += 10 * len(hits)
+        reasons.append(f"⚠️ Suspicious keywords: {', '.join(hits)}")
+
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+    if vt_key:
+        try:
+            import base64
+            url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
+            r = requests.get(
+                f"https://www.virustotal.com/api/v3/urls/{url_id}",
+                headers={"x-apikey": vt_key},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                stats = r.json()["data"]["attributes"]["last_analysis_stats"]
+                malicious = stats.get("malicious", 0)
+                if malicious > 0:
+                    score += 40
+                    reasons.append(f"🚨 VirusTotal: {malicious} engines flagged this URL")
+                else:
+                    reasons.append("✅ VirusTotal: clean")
+        except Exception:
+            pass
+
+    score = min(score, 100)
+    if score < 30:
+        risk = "🟢 Low Risk"
+    elif score < 60:
+        risk = "🟡 Medium Risk"
+    else:
+        risk = "🔴 High Risk"
+
+    body = "\n".join(reasons)
+    return (
+        f"🔍 **Scam Scan — {url}**\n"
+        f"**Final URL:** `{final_url}`\n"
+        f"**Risk Level:** {risk} (`{score}/100`)\n\n"
+        f"{body}"
+    )
+
+
+# ==========================================================================
+# NEW FEATURE: CRYPTO PORTFOLIO (.portfolio)
+# ==========================================================================
+def _portfolio_prices(coins):
+    try:
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": ",".join(coins), "vs_currencies": "usd", "include_24hr_change": "true"},
+            timeout=10,
+        )
+        return r.json()
+    except Exception:
+        return {}
+
+
+def _format_portfolio():
+    if not portfolio:
+        return "📊 Your portfolio is empty. Add coins with `.portfolio add bitcoin 2`"
+    prices = _portfolio_prices(list(portfolio.keys()))
+    lines = ["📊 **Crypto Portfolio**\n"]
+    total_value = 0.0
+    for coin, amount in portfolio.items():
+        info = prices.get(coin, {})
+        price = info.get("usd", 0)
+        change = info.get("usd_24h_change", 0)
+        value = price * amount
+        total_value += value
+        arrow = "📈" if change >= 0 else "📉"
+        lines.append(
+            f"• **{coin.capitalize()}**: `{amount}` @ `${price:,.2f}` = "
+            f"`${value:,.2f}` {arrow} `{change:.2f}%`"
+        )
+    lines.append(f"\n💰 **Total Portfolio Value:** `${total_value:,.2f}`")
+    return "\n".join(lines)
+
+
+# ==========================================================================
+# NEW FEATURE: GITHUB REPO STATS (.repo)
+# ==========================================================================
+def _repo_stats(repo_path):
+    try:
+        r = requests.get(f"https://api.github.com/repos/{repo_path}", timeout=10)
+        if r.status_code == 404:
+            return f"❌ Repository '{repo_path}' not found."
+        if r.status_code != 200:
+            return f"❌ GitHub API returned status {r.status_code}."
+        d = r.json()
+
+        contributors_count = "N/A"
+        try:
+            cr = requests.get(
+                f"https://api.github.com/repos/{repo_path}/contributors",
+                params={"per_page": 1, "anon": "true"},
+                timeout=10,
+            )
+            link = cr.headers.get("Link", "")
+            m = re.search(r'page=(\d+)>; rel="last"', link)
+            if m:
+                contributors_count = m.group(1)
+            elif cr.status_code == 200:
+                contributors_count = str(len(cr.json()))
+        except Exception:
+            pass
+
+        top_lang = "N/A"
+        try:
+            lr = requests.get(f"https://api.github.com/repos/{repo_path}/languages", timeout=10)
+            if lr.status_code == 200:
+                langs = lr.json()
+                total = sum(langs.values()) or 1
+                if langs:
+                    top = max(langs.items(), key=lambda x: x[1])
+                    top_lang = f"{top[0]} ({top[1] / total * 100:.1f}%)"
+        except Exception:
+            pass
+
+        latest_release = "N/A"
+        try:
+            rr = requests.get(f"https://api.github.com/repos/{repo_path}/releases/latest", timeout=10)
+            if rr.status_code == 200:
+                latest_release = rr.json().get("tag_name", "N/A")
+        except Exception:
+            pass
+
+        size_mb = d.get("size", 0) / 1024
+        license_name = d.get("license", {}).get("name") if d.get("license") else "N/A"
+        return f"""🐙 **GitHub Repo — {d['full_name']}**
+⭐ **Stars:** `{d['stargazers_count']:,}`
+🍴 **Forks:** `{d['forks_count']:,}`
+👀 **Watchers:** `{d['watchers_count']:,}`
+🐞 **Open Issues:** `{d['open_issues_count']:,}`
+💻 **Language:** `{d.get('language') or 'N/A'}`
+📊 **Top Language:** `{top_lang}`
+📄 **License:** `{license_name}`
+📦 **Size:** `{size_mb:.2f} MB`
+🏷 **Latest Release:** `{latest_release}`
+🌿 **Default Branch:** `{d.get('default_branch', 'N/A')}`
+📅 **Created:** `{d.get('created_at', 'N/A')[:10]}`
+🔄 **Updated:** `{d.get('updated_at', 'N/A')[:10]}`
+👥 **Contributors:** `{contributors_count}`
+🔗 **URL:** {d['html_url']}"""
+    except requests.exceptions.Timeout:
+        return "❌ GitHub lookup timed out."
+    except Exception as e:
+        return f"❌ Repo lookup failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: OCR (.ocr — reply to an image)
+# ==========================================================================
+_easyocr_reader = None
+
+
+def _get_easyocr_reader():
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        _easyocr_reader = easyocr.Reader(["en", "hi"], gpu=False)
+    return _easyocr_reader
+
+
+def _run_ocr(image_path):
+    """Extract text from an image using EasyOCR (preferred) or Tesseract.
+    Returns extracted text, None if no text found, or 'ENGINE_MISSING'."""
+    if EASYOCR_OK:
+        try:
+            reader = _get_easyocr_reader()
+            results = reader.readtext(image_path, detail=0)
+            text = "\n".join(results).strip()
+            return text or None
+        except Exception as e:
+            log_error("easyocr", e)
+    if TESSERACT_OK:
+        try:
+            img = Image.open(image_path)
+            try:
+                text = pytesseract.image_to_string(img, lang="eng+hin").strip()
+            except Exception:
+                # Hindi trained data may not be installed — fall back to English only
+                text = pytesseract.image_to_string(img, lang="eng").strip()
+            return text or None
+        except Exception as e:
+            log_error("pytesseract", e)
+    if not EASYOCR_OK and not TESSERACT_OK:
+        return "ENGINE_MISSING"
+    return None
+
+
 HELP_TEXT = (
-    "[𝗦𝗘𝗟𝗙𝗕𝗢𝗧 𝗕𝗬 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻](https://rehuux.vercel.app)\n\n"
+    "[𝗦𝗘𝗟𝗙𝗕𝗢𝗧 𝗕𝗬 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻](https://rehuhoonywaar.vercel.app)\n\n"
     "**Channels : **\n**`.autoaccept`** — toggle auto-accept requests\n\n"
     "**User Controls : ** _(reply, @user, or user id)_\n"
     "**`.mute`** / **`.unmute`** — silence a user\n"
@@ -534,6 +1138,15 @@ HELP_TEXT = (
     "**`.flip`** — flip a coin\n"
     "**`.reverse text`** — reverse text\n"
     "**`.ping`** — check bot response latency\n\n"
+    "**Advanced Tools : **\n"
+    "**`.music <song name>`** — search & download a song as MP3\n"
+    "**`.schedule 30m Hello`** — schedule a message (also: `2h`, `1d`, or `YYYY-MM-DD HH:MM`)\n"
+    "**`.osint email/username/domain <target>`** — OSINT lookup\n"
+    "**`.ip <address>`** — IP geolocation & ISP lookup\n"
+    "**`.scan <url>`** — scam/phishing risk scanner\n"
+    "**`.portfolio add/remove/list`** — crypto portfolio tracker\n"
+    "**`.repo owner/repository`** — GitHub repository stats\n"
+    "**`.ocr`** _(reply to image)_ — extract text from an image\n\n"
     "**Info : **\n**`.help`** / **`.commands`** — this list\n**`.dev`** — about the developer\n\n"
     "𝗗𝗘𝗩 ~ 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻"
 )
@@ -1256,6 +1869,242 @@ async def _cmd_dispatch(event):
         msg = await event.edit("🏓 Pinging...")
         latency_ms = int((time.time() - start) * 1000)
         await msg.edit(f"🏓 **Pong!** `{latency_ms}ms`")
+    # ------------------------------------------------
+
+    # ---------------- MUSIC DOWNLOADER ----------------
+    elif text.startswith(".music"):
+        query = raw[6:].strip()
+        if not query:
+            await event.edit("❌ Usage: `.music <song name>`")
+            return
+        if not YTDLP_OK:
+            await event.edit("❌ yt-dlp not installed.")
+            return
+        if not FFMPEG_OK:
+            await event.edit("❌ FFmpeg not installed.")
+            return
+        await event.edit(f"🎵 Searching for **{query}**...")
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(None, _download_music, f"ytsearch1:{query}")
+        except Exception as e:
+            log_error(".music", e)
+            await event.edit(f"❌ Download failed: {e}")
+            return
+
+        if not result or result.get("error"):
+            err = result.get("error", "unknown") if result else "unknown"
+            if err == "not_found":
+                await event.edit("❌ Song not found.")
+            elif err == "ffmpeg_missing":
+                await event.edit("❌ FFmpeg not installed.")
+            elif err == "ytdlp_missing":
+                await event.edit("❌ yt-dlp not installed.")
+            else:
+                await event.edit(f"❌ Song not found or download failed: {err}")
+            return
+
+        await event.edit(f"⬆️ Uploading **{result['title']}**...")
+        duration = int(result["duration"] or 0)
+        mins, secs = divmod(duration, 60)
+        caption = (
+            f"🎵 **{result['title']}**\n"
+            f"👤 **Artist:** {result['artist']}\n"
+            f"⏱ **Duration:** {mins}:{secs:02d}\n"
+        )
+        if result.get("album"):
+            caption += f"💿 **Album:** {result['album']}\n"
+        try:
+            await client.send_file(
+                event.chat_id,
+                result["mp3_path"],
+                caption=caption,
+                attributes=[types.DocumentAttributeAudio(
+                    duration=duration,
+                    title=result["title"],
+                    performer=result["artist"],
+                )],
+                thumb=result.get("thumb_path"),
+            )
+            await event.delete()
+        except Exception as e:
+            log_error(".music upload", e)
+            await event.edit(f"❌ Upload failed: {e}")
+        finally:
+            _cleanup_music_files(result)
+    # ------------------------------------------------
+
+    # ---------------- MESSAGE SCHEDULER ----------------
+    elif text.startswith(".schedule"):
+        args = raw[9:].strip()
+        parsed = _parse_schedule(args)
+        if not parsed:
+            await event.edit(
+                "❌ Usage: `.schedule 30m Hello`, `.schedule 2h Hi`, `.schedule 1d Good Morning`, "
+                "or `.schedule 2026-08-01 09:00 Hello`"
+            )
+            return
+        send_at, message = parsed
+        delay = (send_at - datetime.datetime.now()).total_seconds()
+        if delay <= 0:
+            await event.edit("❌ That time is in the past.")
+            return
+        try:
+            asyncio.create_task(_run_scheduled_send(event.chat_id, message, delay))
+            await event.edit(
+                f"✅ Message Scheduled.\n🕒 Will send at `{send_at.strftime('%Y-%m-%d %H:%M:%S')}`."
+            )
+        except Exception as e:
+            log_error(".schedule", e)
+            await event.edit(f"❌ Failed to schedule message: {e}")
+    # ------------------------------------------------
+
+    # ---------------- OSINT TOOLKIT ----------------
+    elif text.startswith(".osint"):
+        args = raw[6:].strip()
+        parts = args.split(None, 1)
+        if len(parts) < 2:
+            await event.edit(
+                "❌ Usage: `.osint email <addr>` / `.osint username <name>` / `.osint domain <domain>`"
+            )
+            return
+        sub, target = parts[0].lower(), parts[1].strip()
+        await event.edit(f"🕵️ Running OSINT ({sub}) on **{target}**...")
+        loop = asyncio.get_event_loop()
+        try:
+            if sub == "email":
+                result = await loop.run_in_executor(None, _osint_email, target)
+            elif sub == "username":
+                result = await loop.run_in_executor(None, _osint_username, target)
+            elif sub == "domain":
+                result = await loop.run_in_executor(None, _osint_domain, target)
+            else:
+                await event.edit("❌ Unknown subcommand. Use `email`, `username`, or `domain`.")
+                return
+            await event.edit(result[:4000])
+        except Exception as e:
+            log_error(".osint", e)
+            await event.edit(f"❌ OSINT lookup failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- IP LOOKUP ----------------
+    elif text.startswith(".ip"):
+        ip_target = raw[3:].strip()
+        if not ip_target:
+            await event.edit("❌ Usage: `.ip 8.8.8.8`")
+            return
+        await event.edit(f"🌍 Looking up **{ip_target}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _ip_lookup, ip_target)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- SCAM URL DETECTOR ----------------
+    elif text.startswith(".scan"):
+        target_url = raw[5:].strip()
+        if not target_url:
+            await event.edit("❌ Usage: `.scan https://example.com`")
+            return
+        await event.edit(f"🔍 Scanning **{target_url}**...")
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(None, _scan_url, target_url)
+            await event.edit(result[:4000])
+        except Exception as e:
+            log_error(".scan", e)
+            await event.edit(f"❌ Scan failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- CRYPTO PORTFOLIO ----------------
+    elif text.startswith(".portfolio"):
+        args = raw[10:].strip()
+        parts = args.split(None, 2)
+        if not parts:
+            await event.edit("❌ Usage: `.portfolio add/remove/list ...`")
+            return
+        action = parts[0].lower()
+        if action == "list":
+            await event.edit("📊 Loading portfolio...")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _format_portfolio)
+            await event.edit(result)
+        elif action == "add":
+            if len(parts) < 3:
+                await event.edit("❌ Usage: `.portfolio add bitcoin 2`")
+                return
+            coin, amount_str = parts[1].lower(), parts[2]
+            try:
+                amount = float(amount_str)
+            except ValueError:
+                await event.edit("❌ Amount must be a number.")
+                return
+            portfolio[coin] = portfolio.get(coin, 0) + amount
+            save_portfolio(portfolio)
+            await event.edit(f"✅ Added `{amount}` **{coin}** to your portfolio.")
+        elif action == "remove":
+            if len(parts) < 2:
+                await event.edit("❌ Usage: `.portfolio remove bitcoin`")
+                return
+            coin = parts[1].lower()
+            if coin in portfolio:
+                del portfolio[coin]
+                save_portfolio(portfolio)
+                await event.edit(f"✅ Removed **{coin}** from your portfolio.")
+            else:
+                await event.edit(f"❌ **{coin}** not found in your portfolio.")
+        else:
+            await event.edit("❌ Usage: `.portfolio add/remove/list ...`")
+    # ------------------------------------------------
+
+    # ---------------- GITHUB REPO STATS ----------------
+    elif text.startswith(".repo"):
+        repo_arg = raw[5:].strip()
+        if "/" not in repo_arg:
+            await event.edit("❌ Usage: `.repo owner/repository`")
+            return
+        await event.edit(f"🐙 Fetching stats for **{repo_arg}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _repo_stats, repo_arg)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- OCR ----------------
+    elif text == ".ocr":
+        if not event.is_reply:
+            await event.edit("❌ Reply to an image with `.ocr`")
+            return
+        reply = await event.get_reply_message()
+        is_image = bool(reply.photo) or (
+            reply.document and reply.document.mime_type
+            and reply.document.mime_type.startswith("image/")
+        )
+        if not is_image:
+            await event.edit("❌ Reply to an image with `.ocr`")
+            return
+        if not EASYOCR_OK and not TESSERACT_OK:
+            await event.edit("❌ OCR engine not installed (need `easyocr` or `pytesseract`).")
+            return
+        await event.edit("🔍 Extracting text from image...")
+        img_path = os.path.join(TEMP_DIR, f"{uuid4().hex}.jpg")
+        try:
+            await client.download_media(reply, file=img_path)
+            loop = asyncio.get_event_loop()
+            text_result = await loop.run_in_executor(None, _run_ocr, img_path)
+            if text_result == "ENGINE_MISSING":
+                await event.edit("❌ OCR engine not installed.")
+            elif not text_result:
+                await event.edit("No readable text found.")
+            else:
+                await event.edit(f"📝 **Extracted Text:**\n```\n{text_result[:3800]}\n```")
+        except Exception as e:
+            log_error(".ocr", e)
+            await event.edit(f"❌ OCR failed: {e}")
+        finally:
+            if os.path.exists(img_path):
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
     # ------------------------------------------------
 
     elif text.startswith(".say"):
