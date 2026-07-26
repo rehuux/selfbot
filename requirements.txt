@@ -7,7 +7,12 @@ langdetect>=1.0.9
 dnspython>=2.6.1
 python-whois>=0.9.4
 Pillow>=10.3.0
+psutil>=5.9.8
+cryptography>=42.0.0
 
 # --- OCR: choose ONE (see README for tradeoffs) ---
 # easyocr>=1.7.1      # heavy (~2GB incl. torch), best accuracy, GPU optional
 pytesseract>=0.3.10   # lightweight, requires the tesseract-ocr system binary
+
+# --- Optional: enables real download/upload numbers in .net ---
+# speedtest-cli>=2.1.3   # uncomment to enable; adds ~30-45s per .net call
