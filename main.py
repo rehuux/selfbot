@@ -1,10 +1,3 @@
-"""
-Telegram SelfBot — by Syed Rehan
-Production-ready build for Render deployment.
-Includes all original commands, a smart AFK system (6-hour re-trigger),
-a spam/repeat sender, a full command list, and a developer info command.
-"""
-
 import os
 import re
 import json
@@ -73,11 +66,11 @@ ERROR_LOG_FILE = "errors.log"
 
 # Developer / owner info shown by .dev
 DEV_NAME = "Syed Rehan"
-DEV_ROLE = "Freelance Developer & Ethical Hacker"
-DEV_PORTFOLIO = "https://rehuhoonywaar.vercel.app"
+DEV_ROLE = "CyberSecurity Researcher & Ethical Hacker"
+DEV_PORTFOLIO = "https://rehuux.vercel.app"
 DEV_SKILLS = (
-    "Frontend Web Development, Telegram Bot Development, "
-    "Security/OSINT, UI/UX Design, and AI Integration"
+    "Security Researcher, Telegram Bot Development, "
+    "Security/OSINT, Full-Stack Dev, and AI Integration"
 )
 
 # Spam command safety cap — prevents accidental account-flagging floods
@@ -370,8 +363,137 @@ def _translate(text, target_lang):
         return f"❌ Translation error: {e}"
 
 
+def _weather_info(city):
+    """Fetch a compact weather summary via wttr.in (no API key needed)."""
+    try:
+        r = requests.get(f"https://wttr.in/{city}?format=j1", timeout=10)
+        if r.status_code != 200:
+            return f"❌ Couldn't fetch weather for '{city}'."
+        d = r.json()
+        cur = d["current_condition"][0]
+        area = d.get("nearest_area", [{}])[0]
+        place = area.get("areaName", [{}])[0].get("value", city)
+        country = area.get("country", [{}])[0].get("value", "")
+        return f"""🌦 **Weather — {place}, {country}**
+✓ **Condition:** `{cur['weatherDesc'][0]['value']}`
+✓ **Temperature:** `{cur['temp_C']}°C ({cur['temp_F']}°F)`
+✓ **Feels Like:** `{cur['FeelsLikeC']}°C`
+✓ **Humidity:** `{cur['humidity']}%`
+✓ **Wind:** `{cur['windspeedKmph']} km/h`
+✓ **Visibility:** `{cur['visibility']} km`"""
+    except Exception as e:
+        return f"❌ Weather lookup failed: {e}"
+
+
+def _crypto_price(coin):
+    """Fetch a crypto price via CoinGecko (no API key needed)."""
+    try:
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": coin.lower(), "vs_currencies": "usd,inr", "include_24hr_change": "true"},
+            timeout=10,
+        )
+        d = r.json()
+        if coin.lower() not in d:
+            return f"❌ Couldn't find a coin called '{coin}'. Try the full name, e.g. `bitcoin`."
+        info = d[coin.lower()]
+        change = info.get("usd_24h_change", 0)
+        arrow = "📈" if change >= 0 else "📉"
+        return f"""💰 **{coin.capitalize()} Price**
+✓ **USD:** `${info['usd']:,}`
+✓ **INR:** `₹{info['inr']:,}`
+✓ **24h Change:** {arrow} `{change:.2f}%`"""
+    except Exception as e:
+        return f"❌ Crypto lookup failed: {e}"
+
+
+def _dictionary_lookup(word):
+    """Fetch a word definition via the free dictionaryapi.dev."""
+    try:
+        r = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=10)
+        if r.status_code != 200:
+            return f"❌ No definition found for '{word}'."
+        entry = r.json()[0]
+        meanings = entry.get("meanings", [])
+        if not meanings:
+            return f"❌ No definition found for '{word}'."
+        out = [f"📖 **{entry['word']}**"]
+        phonetic = entry.get("phonetic") or ""
+        if phonetic:
+            out.append(f"_{phonetic}_")
+        for m in meanings[:3]:
+            pos = m.get("partOfSpeech", "")
+            defs = m.get("definitions", [])
+            if defs:
+                out.append(f"\n**({pos})** {defs[0]['definition']}")
+                if defs[0].get("example"):
+                    out.append(f"_e.g. \"{defs[0]['example']}\"_")
+        return "\n".join(out)
+    except Exception as e:
+        return f"❌ Dictionary lookup failed: {e}"
+
+
+def _github_info(username):
+    """Fetch a GitHub user's public profile summary."""
+    try:
+        r = requests.get(f"https://api.github.com/users/{username}", timeout=10)
+        if r.status_code == 404:
+            return f"❌ GitHub user '{username}' not found."
+        if r.status_code != 200:
+            return f"❌ GitHub API returned status {r.status_code}."
+        u = r.json()
+        return f"""🐙 **GitHub — @{u['login']}**
+✓ **Name:** `{u.get('name') or 'N/A'}`
+✓ **Bio:** `{u.get('bio') or 'None'}`
+✓ **Followers:** `{u['followers']:,}`
+✓ **Following:** `{u['following']:,}`
+✓ **Public Repos:** `{u['public_repos']:,}`
+✓ **Location:** `{u.get('location') or 'N/A'}`
+✓ **Company:** `{u.get('company') or 'N/A'}`
+✓ **Profile:** {u['html_url']}"""
+    except Exception as e:
+        return f"❌ GitHub lookup failed: {e}"
+
+
+def _short_url(url):
+    """Shorten a URL via is.gd (no API key needed)."""
+    try:
+        r = requests.get(
+            "https://is.gd/create.php",
+            params={"format": "simple", "url": url},
+            timeout=10,
+        )
+        if r.status_code == 200 and r.text.startswith("http"):
+            return f"🔗 Shortened: {r.text.strip()}"
+        return f"❌ Couldn't shorten that URL: {r.text.strip()}"
+    except Exception as e:
+        return f"❌ URL shortening failed: {e}"
+
+
+def _quote_of_the_day():
+    """Fetch a random inspirational quote."""
+    try:
+        r = requests.get("https://zenquotes.io/api/random", timeout=10)
+        d = r.json()[0]
+        return f"💭 _\"{d['q']}\"_\n— **{d['a']}**"
+    except Exception as e:
+        return f"❌ Couldn't fetch a quote: {e}"
+
+
+def _random_joke():
+    """Fetch a random clean joke."""
+    try:
+        r = requests.get(
+            "https://official-joke-api.appspot.com/random_joke", timeout=10
+        )
+        d = r.json()
+        return f"😂 {d['setup']}\n\n||{d['punchline']}||"
+    except Exception as e:
+        return f"❌ Couldn't fetch a joke: {e}"
+
+
 HELP_TEXT = (
-    "[𝗦𝗘𝗟𝗙𝗕𝗢𝗧 𝗕𝗬 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻](https://rehuhoonywaar.vercel.app)\n\n"
+    "[𝗦𝗘𝗟𝗙𝗕𝗢𝗧 𝗕𝗬 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻](https://rehuux.vercel.app)\n\n"
     "**Channels : **\n**`.autoaccept`** — toggle auto-accept requests\n\n"
     "**User Controls : ** _(reply, @user, or user id)_\n"
     "**`.mute`** / **`.unmute`** — silence a user\n"
@@ -398,6 +520,20 @@ HELP_TEXT = (
     "**`.calc expr`** — calculator\n**`.tr <lang> [text]`** — translate text or a reply\n\n"
     "**Reliability : **\n**`.fix`** — toggle auto-fix (retry + log errors)\n"
     "**`.fixlog`** — show last logged errors\n\n"
+    "**Fun & Utility : **\n"
+    "**`.weather <city>`** — current weather\n"
+    "**`.crypto <coin>`** — live crypto price (e.g. `.crypto bitcoin`)\n"
+    "**`.define <word>`** — dictionary lookup\n"
+    "**`.github <user>`** — GitHub profile info\n"
+    "**`.short <url>`** — shorten a link\n"
+    "**`.qr <text>`** — generate a QR code\n"
+    "**`.quote`** — random inspirational quote\n"
+    "**`.joke`** — random joke\n"
+    "**`.8ball <question>`** — magic 8-ball answer\n"
+    "**`.roll [N]`** — roll a dice (default 1–6)\n"
+    "**`.flip`** — flip a coin\n"
+    "**`.reverse text`** — reverse text\n"
+    "**`.ping`** — check bot response latency\n\n"
     "**Info : **\n**`.help`** / **`.commands`** — this list\n**`.dev`** — about the developer\n\n"
     "𝗗𝗘𝗩 ~ 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻"
 )
@@ -994,6 +1130,133 @@ async def _cmd_dispatch(event):
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _translate, content, lang)
         await event.edit(result)
+
+    # ---------------- FUN & UTILITY COMMANDS ----------------
+    elif text.startswith(".weather"):
+        city = raw[8:].strip()
+        if not city:
+            await event.edit("❌ Usage: `.weather Mumbai`")
+            return
+        await event.edit(f"🌦 Fetching weather for **{city}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _weather_info, city)
+        await event.edit(result)
+
+    elif text.startswith(".crypto"):
+        coin = raw[7:].strip()
+        if not coin:
+            await event.edit("❌ Usage: `.crypto bitcoin`")
+            return
+        await event.edit(f"💰 Fetching price for **{coin}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _crypto_price, coin)
+        await event.edit(result)
+
+    elif text.startswith(".define"):
+        word = raw[7:].strip()
+        if not word:
+            await event.edit("❌ Usage: `.define serendipity`")
+            return
+        await event.edit(f"📖 Looking up **{word}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _dictionary_lookup, word)
+        await event.edit(result)
+
+    elif text.startswith(".github"):
+        gh_user = raw[7:].strip().lstrip("@")
+        if not gh_user:
+            await event.edit("❌ Usage: `.github torvalds`")
+            return
+        await event.edit(f"🐙 Fetching GitHub profile for **{gh_user}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _github_info, gh_user)
+        await event.edit(result)
+
+    elif text.startswith(".short"):
+        url = raw[6:].strip()
+        if not url.startswith("http"):
+            await event.edit("❌ Usage: `.short https://example.com/very/long/link`")
+            return
+        await event.edit("🔗 Shortening...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _short_url, url)
+        await event.edit(result)
+
+    elif text.startswith(".qr"):
+        qr_text = raw[3:].strip()
+        if not qr_text:
+            await event.edit("❌ Usage: `.qr https://example.com` or `.qr any text`")
+            return
+        await event.edit("🔳 Generating QR code...")
+        try:
+            qr_url = (
+                "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data="
+                + requests.utils.quote(qr_text)
+            )
+            await client.send_file(event.chat_id, qr_url, caption=f"🔳 QR for: `{qr_text}`")
+            await event.delete()
+        except Exception as e:
+            await event.edit(f"❌ QR generation failed: {e}")
+
+    elif text == ".quote":
+        await event.edit("💭 Fetching a quote...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _quote_of_the_day)
+        await event.edit(result)
+
+    elif text == ".joke":
+        await event.edit("😂 Fetching a joke...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _random_joke)
+        await event.edit(result)
+
+    elif text.startswith(".8ball"):
+        question = raw[6:].strip()
+        if not question:
+            await event.edit("❌ Usage: `.8ball Will it rain today?`")
+            return
+        answers = [
+            "It is certain.", "Without a doubt.", "Yes, definitely.",
+            "You may rely on it.", "Most likely.", "Outlook good.",
+            "Signs point to yes.", "Reply hazy, try again.",
+            "Ask again later.", "Better not tell you now.",
+            "Cannot predict now.", "Concentrate and ask again.",
+            "Don't count on it.", "My reply is no.",
+            "My sources say no.", "Outlook not so good.",
+            "Very doubtful.",
+        ]
+        await event.edit(f"🎱 **Q:** {question}\n**A:** {random.choice(answers)}")
+
+    elif text.startswith(".roll"):
+        parts = raw.split(None, 1)
+        sides = 6
+        if len(parts) > 1:
+            try:
+                sides = int(parts[1])
+                assert sides >= 2
+            except Exception:
+                await event.edit("❌ Usage: `.roll` or `.roll 20` (for a d20)")
+                return
+        result = random.randint(1, sides)
+        await event.edit(f"🎲 You rolled a **{result}** (1–{sides})")
+
+    elif text == ".flip":
+        result = random.choice(["🪙 Heads", "🪙 Tails"])
+        await event.edit(f"**{result}**")
+
+    elif text.startswith(".reverse"):
+        content = raw[8:].strip()
+        if not content:
+            await event.edit("❌ Usage: `.reverse hello world`")
+            return
+        await event.edit(f"🔁 `{content[::-1]}`")
+
+    elif text == ".ping":
+        start = time.time()
+        msg = await event.edit("🏓 Pinging...")
+        latency_ms = int((time.time() - start) * 1000)
+        await msg.edit(f"🏓 **Pong!** `{latency_ms}ms`")
+    # ------------------------------------------------
 
     elif text.startswith(".say"):
         content = raw[4:].strip()
