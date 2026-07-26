@@ -3,3 +3,4 @@ aiohttp>=3.9.0
 requests>=2.31.0
 sympy>=1.12
 instaloader>=4.11
+langdetect>=1.0.9
