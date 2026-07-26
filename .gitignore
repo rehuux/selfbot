@@ -1,0 +1,21 @@
+*.session
+*.session-journal
+selfbot_data.json
+errors.log
+__pycache__/
+*.pyc
+.env
+youtube_cookies.txt
+
+# Encrypted secret notes + salt — never commit, even encrypted
+secret_notes.enc
+secret_salt.bin
+
+# Feature state files (local runtime data, not source)
+ghost_state.json
+whale_state.json
+portfolio_data.json
+
+# Local temp/scratch files
+selfbot_temp/
+profile_archive/
