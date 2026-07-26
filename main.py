@@ -4,7 +4,6 @@ import json
 import time
 import socket
 import ssl
-import shutil
 import datetime
 import asyncio
 import random
@@ -56,14 +55,6 @@ except ImportError:
     LANGDETECT_OK = False
 
 # --- New feature dependencies (all optional — bot degrades gracefully) ---
-try:
-    import yt_dlp
-    YTDLP_OK = True
-except ImportError:
-    YTDLP_OK = False
-
-FFMPEG_OK = shutil.which("ffmpeg") is not None
-
 try:
     import dns.resolver
     DNS_OK = True
@@ -568,77 +559,162 @@ def _random_joke():
 
 
 # ==========================================================================
-# NEW FEATURE: MUSIC DOWNLOADER (.music)
+# NEW FEATURE: MEME FETCHER (.meme)
 # ==========================================================================
-def _download_music(query):
-    """Search YouTube via yt-dlp and download best audio as mp3.
-    Returns a dict with file paths + metadata, or {"error": ...} on failure.
-    """
-    if not YTDLP_OK:
-        return {"error": "ytdlp_missing"}
-    if not FFMPEG_OK:
-        return {"error": "ffmpeg_missing"}
-
-    out_template = os.path.join(TEMP_DIR, f"{uuid4().hex}.%(ext)s")
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_template,
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-        "default_search": "ytsearch1",
-        "socket_timeout": 20,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "320",
-        }],
-        "writethumbnail": True,
-    }
+def _random_meme():
+    """Fetch a random meme (image URL + title) from a popular subreddit feed."""
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=True)
-            if info is None:
-                return {"error": "not_found"}
-            if "entries" in info:
-                entries = [e for e in info["entries"] if e]
-                if not entries:
-                    return {"error": "not_found"}
-                info = entries[0]
-
-            base = ydl.prepare_filename(info)
-            mp3_path = os.path.splitext(base)[0] + ".mp3"
-            thumb_path = None
-            for ext in ("jpg", "webp", "png"):
-                candidate = os.path.splitext(base)[0] + f".{ext}"
-                if os.path.exists(candidate):
-                    thumb_path = candidate
-                    break
-
-            if not os.path.exists(mp3_path):
-                return {"error": "not_found"}
-
-            return {
-                "mp3_path": mp3_path,
-                "thumb_path": thumb_path,
-                "title": info.get("title", "Unknown"),
-                "artist": info.get("uploader") or info.get("artist") or "Unknown",
-                "duration": info.get("duration", 0) or 0,
-                "album": info.get("album"),
-            }
+        r = requests.get("https://meme-api.com/gimme", timeout=10)
+        d = r.json()
+        if not d.get("url"):
+            return None, "❌ Couldn't fetch a meme right now."
+        caption = f"😹 **{d.get('title', 'Meme')}**\nr/{d.get('subreddit', 'memes')}"
+        return d["url"], caption
     except Exception as e:
-        log_error(".music download", e)
-        return {"error": f"download_failed: {e}"}
+        return None, f"❌ Meme fetch failed: {e}"
 
 
-def _cleanup_music_files(result):
-    for key in ("mp3_path", "thumb_path"):
-        p = result.get(key) if result else None
-        if p and os.path.exists(p):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+# ==========================================================================
+# NEW FEATURE: TRIVIA (.trivia)
+# ==========================================================================
+def _random_trivia():
+    """Fetch a random trivia question (Open Trivia DB, no key needed)."""
+    try:
+        r = requests.get(
+            "https://opentdb.com/api.php",
+            params={"amount": 1, "type": "multiple"},
+            timeout=10,
+        )
+        d = r.json()
+        results = d.get("results", [])
+        if not results:
+            return "❌ Couldn't fetch a trivia question."
+        import html
+        q = results[0]
+        question = html.unescape(q["question"])
+        correct = html.unescape(q["correct_answer"])
+        category = html.unescape(q["category"])
+        return (
+            f"🧠 **Trivia — {category}**\n\n{question}\n\n"
+            f"||Answer: {correct}||"
+        )
+    except Exception as e:
+        return f"❌ Trivia fetch failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: RANDOM FACT (.fact)
+# ==========================================================================
+def _random_fact():
+    """Fetch a random 'useless fact' (no key needed)."""
+    try:
+        r = requests.get(
+            "https://uselessfacts.jsph.pl/api/v2/facts/random",
+            params={"language": "en"},
+            timeout=10,
+        )
+        d = r.json()
+        return f"🧾 **Random Fact**\n{d.get('text', 'No fact available.')}"
+    except Exception as e:
+        return f"❌ Fact fetch failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: HOROSCOPE (.horoscope)
+# ==========================================================================
+VALID_ZODIAC_SIGNS = {
+    "aries", "taurus", "gemini", "cancer", "leo", "virgo", "libra",
+    "scorpio", "sagittarius", "capricorn", "aquarius", "pisces",
+}
+
+
+def _daily_horoscope(sign):
+    sign = sign.lower().strip()
+    if sign not in VALID_ZODIAC_SIGNS:
+        return f"❌ Unknown sign '{sign}'. Try one of: {', '.join(sorted(VALID_ZODIAC_SIGNS))}"
+    try:
+        r = requests.get(
+            "https://aztro.sameerkumar.website/",
+            params={"sign": sign, "day": "today"},
+            timeout=10,
+        )
+        # aztro requires POST in some deployments; fall back to POST if GET fails
+        if r.status_code != 200:
+            r = requests.post(
+                "https://aztro.sameerkumar.website/",
+                params={"sign": sign, "day": "today"},
+                timeout=10,
+            )
+        d = r.json()
+        return f"""🔮 **Horoscope — {sign.capitalize()}** ({d.get('current_date', 'today')})
+{d.get('description', 'N/A')}
+
+✓ **Mood:** `{d.get('mood', 'N/A')}`
+✓ **Compatibility:** `{d.get('compatibility', 'N/A')}`
+✓ **Lucky Number:** `{d.get('lucky_number', 'N/A')}`
+✓ **Lucky Time:** `{d.get('lucky_time', 'N/A')}`"""
+    except Exception as e:
+        return f"❌ Horoscope fetch failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: COUNTRY INFO (.country)
+# ==========================================================================
+def _country_info(name):
+    try:
+        r = requests.get(f"https://restcountries.com/v3.1/name/{name}", timeout=10)
+        if r.status_code != 200:
+            return f"❌ Country '{name}' not found."
+        d = r.json()[0]
+        capital = ", ".join(d.get("capital", ["N/A"]))
+        currencies = ", ".join(
+            f"{v.get('name')} ({v.get('symbol', '')})" for v in d.get("currencies", {}).values()
+        ) or "N/A"
+        languages = ", ".join(d.get("languages", {}).values()) or "N/A"
+        population = d.get("population", 0)
+        region = d.get("region", "N/A")
+        subregion = d.get("subregion", "N/A")
+        maps_link = d.get("maps", {}).get("googleMaps", "")
+        flag_emoji = d.get("flag", "")
+        return f"""🌍 **{d['name']['common']}** {flag_emoji}
+✓ **Official Name:** `{d['name'].get('official', 'N/A')}`
+✓ **Capital:** `{capital}`
+✓ **Region:** `{region} / {subregion}`
+✓ **Population:** `{population:,}`
+✓ **Languages:** `{languages}`
+✓ **Currencies:** `{currencies}`
+✓ **Map:** {maps_link}"""
+    except Exception as e:
+        return f"❌ Country lookup failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: ANIME LOOKUP (.anime)
+# ==========================================================================
+def _anime_info(name):
+    try:
+        r = requests.get(
+            "https://api.jikan.moe/v4/anime",
+            params={"q": name, "limit": 1},
+            timeout=10,
+        )
+        d = r.json()
+        results = d.get("data", [])
+        if not results:
+            return f"❌ Anime '{name}' not found."
+        a = results[0]
+        genres = ", ".join(g["name"] for g in a.get("genres", [])) or "N/A"
+        return f"""🎬 **{a.get('title', name)}**
+✓ **Type:** `{a.get('type', 'N/A')}`
+✓ **Episodes:** `{a.get('episodes', 'N/A')}`
+✓ **Status:** `{a.get('status', 'N/A')}`
+✓ **Score:** `{a.get('score', 'N/A')}`
+✓ **Genres:** `{genres}`
+✓ **Aired:** `{a.get('aired', {}).get('string', 'N/A')}`
+✓ **Synopsis:** {(a.get('synopsis') or 'N/A')[:400]}
+✓ **URL:** {a.get('url', 'N/A')}"""
+    except Exception as e:
+        return f"❌ Anime lookup failed: {e}"
 
 
 # ==========================================================================
@@ -1139,14 +1215,19 @@ HELP_TEXT = (
     "**`.reverse text`** — reverse text\n"
     "**`.ping`** — check bot response latency\n\n"
     "**Advanced Tools : **\n"
-    "**`.music <song name>`** — search & download a song as MP3\n"
     "**`.schedule 30m Hello`** — schedule a message (also: `2h`, `1d`, or `YYYY-MM-DD HH:MM`)\n"
     "**`.osint email/username/domain <target>`** — OSINT lookup\n"
     "**`.ip <address>`** — IP geolocation & ISP lookup\n"
     "**`.scan <url>`** — scam/phishing risk scanner\n"
     "**`.portfolio add/remove/list`** — crypto portfolio tracker\n"
     "**`.repo owner/repository`** — GitHub repository stats\n"
-    "**`.ocr`** _(reply to image)_ — extract text from an image\n\n"
+    "**`.ocr`** _(reply to image)_ — extract text from an image\n"
+    "**`.meme`** — random meme\n"
+    "**`.trivia`** — random trivia question\n"
+    "**`.fact`** — random useless fact\n"
+    "**`.horoscope <sign>`** — daily horoscope\n"
+    "**`.country <name>`** — country info\n"
+    "**`.anime <name>`** — anime lookup\n\n"
     "**Info : **\n**`.help`** / **`.commands`** — this list\n**`.dev`** — about the developer\n\n"
     "𝗗𝗘𝗩 ~ 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻"
 )
@@ -1679,7 +1760,7 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.respond(f"❌ {e}")
 
-    elif text.startswith(".count"):
+    elif text.startswith(".count ") or text == ".count":
         parts = raw.split(None, 2)
         try:
             sec = int(parts[1])
@@ -1717,7 +1798,7 @@ async def _cmd_dispatch(event):
         except Exception:
             await event.edit("❌ Invalid expression.")
 
-    elif text.startswith(".tr") or text.startswith(".translate"):
+    elif text.startswith(".tr ") or text == ".tr" or text.startswith(".translate"):
         cmd_end = 3 if text.startswith(".tr") else 10
         rest = raw[cmd_end:].strip()
         if not rest and event.is_reply:
@@ -1871,67 +1952,73 @@ async def _cmd_dispatch(event):
         await msg.edit(f"🏓 **Pong!** `{latency_ms}ms`")
     # ------------------------------------------------
 
-    # ---------------- MUSIC DOWNLOADER ----------------
-    elif text.startswith(".music"):
-        query = raw[6:].strip()
-        if not query:
-            await event.edit("❌ Usage: `.music <song name>`")
-            return
-        if not YTDLP_OK:
-            await event.edit("❌ yt-dlp not installed.")
-            return
-        if not FFMPEG_OK:
-            await event.edit("❌ FFmpeg not installed.")
-            return
-        await event.edit(f"🎵 Searching for **{query}**...")
+    # ---------------- MEME FETCHER ----------------
+    elif text == ".meme":
+        await event.edit("😹 Fetching a meme...")
         loop = asyncio.get_event_loop()
         try:
-            result = await loop.run_in_executor(None, _download_music, f"ytsearch1:{query}")
-        except Exception as e:
-            log_error(".music", e)
-            await event.edit(f"❌ Download failed: {e}")
-            return
-
-        if not result or result.get("error"):
-            err = result.get("error", "unknown") if result else "unknown"
-            if err == "not_found":
-                await event.edit("❌ Song not found.")
-            elif err == "ffmpeg_missing":
-                await event.edit("❌ FFmpeg not installed.")
-            elif err == "ytdlp_missing":
-                await event.edit("❌ yt-dlp not installed.")
+            img_url, caption = await loop.run_in_executor(None, _random_meme)
+            if img_url:
+                await client.send_file(event.chat_id, img_url, caption=caption)
+                await event.delete()
             else:
-                await event.edit(f"❌ Song not found or download failed: {err}")
-            return
-
-        await event.edit(f"⬆️ Uploading **{result['title']}**...")
-        duration = int(result["duration"] or 0)
-        mins, secs = divmod(duration, 60)
-        caption = (
-            f"🎵 **{result['title']}**\n"
-            f"👤 **Artist:** {result['artist']}\n"
-            f"⏱ **Duration:** {mins}:{secs:02d}\n"
-        )
-        if result.get("album"):
-            caption += f"💿 **Album:** {result['album']}\n"
-        try:
-            await client.send_file(
-                event.chat_id,
-                result["mp3_path"],
-                caption=caption,
-                attributes=[types.DocumentAttributeAudio(
-                    duration=duration,
-                    title=result["title"],
-                    performer=result["artist"],
-                )],
-                thumb=result.get("thumb_path"),
-            )
-            await event.delete()
+                await event.edit(caption)
         except Exception as e:
-            log_error(".music upload", e)
-            await event.edit(f"❌ Upload failed: {e}")
-        finally:
-            _cleanup_music_files(result)
+            log_error(".meme", e)
+            await event.edit(f"❌ Meme fetch failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- TRIVIA ----------------
+    elif text == ".trivia":
+        await event.edit("🧠 Fetching a trivia question...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _random_trivia)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- RANDOM FACT ----------------
+    elif text == ".fact":
+        await event.edit("🧾 Fetching a random fact...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _random_fact)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- HOROSCOPE ----------------
+    elif text.startswith(".horoscope"):
+        sign = raw[10:].strip()
+        if not sign:
+            await event.edit("❌ Usage: `.horoscope leo` (or any zodiac sign)")
+            return
+        await event.edit(f"🔮 Fetching horoscope for **{sign}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _daily_horoscope, sign)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- COUNTRY INFO ----------------
+    elif text.startswith(".country"):
+        country_name = raw[8:].strip()
+        if not country_name:
+            await event.edit("❌ Usage: `.country Japan`")
+            return
+        await event.edit(f"🌍 Looking up **{country_name}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _country_info, country_name)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- ANIME LOOKUP ----------------
+    elif text.startswith(".anime"):
+        anime_name = raw[6:].strip()
+        if not anime_name:
+            await event.edit("❌ Usage: `.anime Naruto`")
+            return
+        await event.edit(f"🎬 Looking up **{anime_name}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _anime_info, anime_name)
+        await event.edit(result)
+    # ------------------------------------------------
     # ------------------------------------------------
 
     # ---------------- MESSAGE SCHEDULER ----------------
