@@ -4,7 +4,6 @@ requests>=2.31.0
 sympy>=1.12
 instaloader>=4.11
 langdetect>=1.0.9
-yt-dlp>=2024.8.6
 dnspython>=2.6.1
 python-whois>=0.9.4
 Pillow>=10.3.0
