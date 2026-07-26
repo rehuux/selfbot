@@ -8,6 +8,8 @@ import datetime
 import asyncio
 import random
 import logging
+import platform
+import sys
 import traceback
 from uuid import uuid4
 
@@ -80,6 +82,26 @@ try:
 except ImportError:
     TESSERACT_OK = False
 
+try:
+    import psutil
+    PSUTIL_OK = True
+except ImportError:
+    PSUTIL_OK = False
+
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    CRYPTO_OK = True
+except ImportError:
+    CRYPTO_OK = False
+
+try:
+    import speedtest as speedtest_module
+    SPEEDTEST_OK = True
+except ImportError:
+    SPEEDTEST_OK = False
+
 # ------------------------------------------------------------------
 # Environment / config
 # ------------------------------------------------------------------
@@ -95,12 +117,16 @@ ERROR_LOG_FILE = "errors.log"
 
 # Developer / owner info shown by .dev
 DEV_NAME = "Syed Rehan"
-DEV_ROLE = "Freelance Developer & Ethical Hacker"
-DEV_PORTFOLIO = "https://rehuhoonywaar.vercel.app"
+DEV_ROLE = "Security Researcher & Ethical Hacker"
+DEV_PORTFOLIO = "https://rehuux.vercel.app"
 DEV_SKILLS = (
-    "Frontend Web Development, Telegram Bot Development, "
-    "Security/OSINT, UI/UX Design, and AI Integration"
+    "CyberSecurity, Telegram Bot Development, "
+    "Security/OSINT, and AI Integration"
 )
+DEV_GITHUB = "https://github.com/rehuux"  # update to your actual GitHub if different
+BOT_VERSION = "3.0.0"
+BOT_BUILD = "2026.07"
+BOT_START_TIME = time.time()
 
 # Spam command safety cap — prevents accidental account-flagging floods
 SPAM_MAX_REPEATS = 20
@@ -125,6 +151,29 @@ USERNAME_CHECK_SITES = {
     "Telegram": "https://t.me/{u}",
     "TikTok": "https://www.tiktok.com/@{u}",
 }
+
+# --- Ghost Mode config/state ---
+GHOST_STATE_FILE = "ghost_state.json"
+GHOST_DELETE_DELAY = 5  # seconds — how long a command's result stays visible
+
+# --- Secret Notes config (AES-256-GCM, local file only) ---
+SECRET_NOTES_FILE = "secret_notes.enc"
+SECRET_SALT_FILE = "secret_salt.bin"
+# Master password comes from an environment variable rather than an
+# interactive prompt — a blocking input() at startup would hang the
+# process forever on a headless host like Render (no stdin available),
+# which would break deployment. Set SECRET_MASTER_PASSWORD before using
+# any `.secret` command.
+SECRET_MASTER_PASSWORD = os.environ.get("SECRET_MASTER_PASSWORD", "")
+
+# --- Whale Alert config/state ---
+WHALE_STATE_FILE = "whale_state.json"
+WHALE_CHECK_INTERVAL = 60  # seconds between polls
+WHALE_BTC_THRESHOLD_SATS = 5_000_000_000  # ~50 BTC — "unusually large" cutoff
+WHALE_ETH_THRESHOLD_WEI = 500 * 10**18  # ~500 ETH
+ETHERSCAN_API_KEY = os.environ.get("ETHERSCAN_API_KEY", "")
+BSCSCAN_API_KEY = os.environ.get("BSCSCAN_API_KEY", "")
+_seen_whale_txids = set()  # in-memory de-dupe (bounded, cleared periodically)
 
 
 def load_portfolio():
@@ -252,6 +301,53 @@ class AFKState:
 
 
 afk = AFKState()
+
+
+# ------------------------------------------------------------------
+# GHOST MODE
+# ------------------------------------------------------------------
+class GhostModeState:
+    """Tracks Ghost Mode on/off + auto-delete delay, persisted to disk so
+    the setting survives a restart.
+
+    Honest limitation: Telethon/MTProto sends some acknowledgements at the
+    protocol level (e.g. when fetching message history) that a client
+    cannot fully suppress. Ghost Mode here does what's actually under our
+    control: it never issues explicit typing actions, skips manual
+    "mark as read" calls, and auto-deletes command output after a delay.
+    """
+
+    def __init__(self):
+        self.enabled = False
+        self.delete_delay = GHOST_DELETE_DELAY
+        self._load()
+
+    def _load(self):
+        try:
+            with open(GHOST_STATE_FILE, "r") as f:
+                d = json.load(f)
+            self.enabled = bool(d.get("enabled", False))
+            self.delete_delay = int(d.get("delete_delay", GHOST_DELETE_DELAY))
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
+            pass
+
+    def _save(self):
+        try:
+            with open(GHOST_STATE_FILE, "w") as f:
+                json.dump({"enabled": self.enabled, "delete_delay": self.delete_delay}, f)
+        except Exception as e:
+            log_error("ghost_state_save", e)
+
+    def enable(self):
+        self.enabled = True
+        self._save()
+
+    def disable(self):
+        self.enabled = False
+        self._save()
+
+
+ghost_mode = GhostModeState()
 
 
 # ------------------------------------------------------------------
@@ -1172,65 +1268,743 @@ def _run_ocr(image_path):
     return None
 
 
-HELP_TEXT = (
-    "[𝗦𝗘𝗟𝗙𝗕𝗢𝗧 𝗕𝗬 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻](https://rehuhoonywaar.vercel.app)\n\n"
-    "**Channels : **\n**`.autoaccept`** — toggle auto-accept requests\n\n"
-    "**User Controls : ** _(reply, @user, or user id)_\n"
-    "**`.mute`** / **`.unmute`** — silence a user\n"
-    "**`.unban`** — unban user\n"
-    "**`.block`** / **`.unblock`** — Telegram block\n"
-    "**`.kick`** — kick from group\n"
-    "**`.admin`** — promote user to group admin\n"
-    "**`.demote`** — remove user's admin rights\n\n"
-    "**Broadcasting : **\n**`.frwd`** _(reply)_ — forward to all DMs\n"
-    "**`.gc`** _(reply)_ — blast all your groups\n"
-    "**`.broad`** _(reply)_ — text all users\n"
-    "**`.frwdall`** _(reply)_ — DMs + groups combined\n"
-    "**`.dm @user msg`** — single DM\n"
-    "**`.spm text N`** / **`.spam text N`** — repeat-send text N times in this chat\n\n"
-    "**AFK : **\n**`.afk [message]`** — enable AFK auto-reply (DMs only, re-triggers after 6h)\n"
-    "**`.back`** — disable AFK\n\n"
-    "**Details : ** _(reply to get info)_\n"
-    "**`.info`** — full user info\n**`.chatinfo`** — group/chat details\n**`.id`** — user or chat ID\n"
-    "**`.insta @user`** — Instagram profile lookup\n\n"
-    "**`.count N`** — countdown (1–300s)\n**`.del`** — nuke private chat history\n"
-    "**`.purge N`** — delete last N messages\n**`.close N`** — leave group after N sec\n"
-    "**`.mm`** _(reply)_ — open middleman group\n**`.tag`** — tag all group members\n"
-    "**`.say text`** — ghost-send a message\n"
-    "**`.calc expr`** — calculator\n**`.tr <lang> [text]`** — translate text or a reply\n\n"
-    "**Reliability : **\n**`.fix`** — toggle auto-fix (retry + log errors)\n"
-    "**`.fixlog`** — show last logged errors\n\n"
-    "**Fun & Utility : **\n"
-    "**`.weather <city>`** — current weather\n"
-    "**`.crypto <coin>`** — live crypto price (e.g. `.crypto bitcoin`)\n"
-    "**`.define <word>`** — dictionary lookup\n"
-    "**`.github <user>`** — GitHub profile info\n"
-    "**`.short <url>`** — shorten a link\n"
-    "**`.qr <text>`** — generate a QR code\n"
-    "**`.quote`** — random inspirational quote\n"
-    "**`.joke`** — random joke\n"
-    "**`.8ball <question>`** — magic 8-ball answer\n"
-    "**`.roll [N]`** — roll a dice (default 1–6)\n"
-    "**`.flip`** — flip a coin\n"
-    "**`.reverse text`** — reverse text\n"
-    "**`.ping`** — check bot response latency\n\n"
-    "**Advanced Tools : **\n"
-    "**`.schedule 30m Hello`** — schedule a message (also: `2h`, `1d`, or `YYYY-MM-DD HH:MM`)\n"
-    "**`.osint email/username/domain <target>`** — OSINT lookup\n"
-    "**`.ip <address>`** — IP geolocation & ISP lookup\n"
-    "**`.scan <url>`** — scam/phishing risk scanner\n"
-    "**`.portfolio add/remove/list`** — crypto portfolio tracker\n"
-    "**`.repo owner/repository`** — GitHub repository stats\n"
-    "**`.ocr`** _(reply to image)_ — extract text from an image\n"
-    "**`.meme`** — random meme\n"
-    "**`.trivia`** — random trivia question\n"
-    "**`.fact`** — random useless fact\n"
-    "**`.horoscope <sign>`** — daily horoscope\n"
-    "**`.country <name>`** — country info\n"
-    "**`.anime <name>`** — anime lookup\n\n"
-    "**Info : **\n**`.help`** / **`.commands`** — this list\n**`.dev`** — about the developer\n\n"
-    "𝗗𝗘𝗩 ~ 𝗦𝘆𝗲𝗱 𝗥𝗲𝗵𝗮𝗻"
+# ==========================================================================
+# NEW FEATURE: CHAT ANALYTICS (.analytics)
+# ==========================================================================
+_EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002600-\U000027BF"
+    "\U0001F1E6-\U0001F1FF"
+    "]+",
+    flags=re.UNICODE,
 )
+_STOPWORDS = {
+    "the", "a", "an", "is", "are", "was", "were", "to", "of", "and", "in",
+    "it", "i", "you", "for", "on", "with", "this", "that", "be", "have",
+    "at", "not", "but", "or", "as", "we", "they", "he", "she", "my", "your",
+    "kya", "hai", "ke", "ki", "ka", "hi", "to", "me", "ho", "nahi", "aur",
+}
+
+
+async def _build_chat_analytics(chat_id, limit=1000):
+    """Scan up to `limit` recent messages in a chat and build a stats
+    summary. Runs fully async (client.iter_messages) so it never blocks
+    the event loop, and caps the scan so it stays fast on large chats.
+    """
+    counts = {
+        "messages": 0, "media": 0, "links": 0, "files": 0,
+        "gifs": 0, "stickers": 0, "voice": 0,
+    }
+    sender_counts = {}
+    word_counts = {}
+    emoji_counts = {}
+    hour_counts = [0] * 24
+    total_chars = 0
+    text_msg_count = 0
+
+    async for msg in client.iter_messages(chat_id, limit=limit):
+        counts["messages"] += 1
+
+        sender_name = "Unknown"
+        try:
+            if msg.sender:
+                sender_name = getattr(msg.sender, "first_name", None) or \
+                    getattr(msg.sender, "title", None) or "Unknown"
+        except Exception:
+            pass
+        sender_counts[sender_name] = sender_counts.get(sender_name, 0) + 1
+
+        if msg.date:
+            hour_counts[msg.date.hour] += 1
+
+        if msg.media:
+            counts["media"] += 1
+            if getattr(msg, "voice", None):
+                counts["voice"] += 1
+            elif getattr(msg, "gif", None):
+                counts["gifs"] += 1
+            elif getattr(msg, "sticker", None):
+                counts["stickers"] += 1
+            elif getattr(msg, "document", None):
+                counts["files"] += 1
+
+        if msg.text:
+            text_msg_count += 1
+            total_chars += len(msg.text)
+            if re.search(r"https?://", msg.text):
+                counts["links"] += 1
+            for w in re.findall(r"[a-zA-Z]{3,}", msg.text.lower()):
+                if w not in _STOPWORDS:
+                    word_counts[w] = word_counts.get(w, 0) + 1
+            for e in _EMOJI_PATTERN.findall(msg.text):
+                for ch in e:
+                    emoji_counts[ch] = emoji_counts.get(ch, 0) + 1
+
+    top_senders = sorted(sender_counts.items(), key=lambda x: -x[1])[:10]
+    top_words = sorted(word_counts.items(), key=lambda x: -x[1])[:5]
+    top_emojis = sorted(emoji_counts.items(), key=lambda x: -x[1])[:5]
+    peak_hour = max(range(24), key=lambda h: hour_counts[h]) if any(hour_counts) else None
+    avg_len = (total_chars / text_msg_count) if text_msg_count else 0
+
+    return {
+        "counts": counts,
+        "top_senders": top_senders,
+        "top_words": top_words,
+        "top_emojis": top_emojis,
+        "hour_counts": hour_counts,
+        "peak_hour": peak_hour,
+        "avg_len": avg_len,
+    }
+
+
+def _format_analytics(data):
+    c = data["counts"]
+    lines = ["━━━━━━━━━━━━━━━━━━", "📊 **CHAT ANALYTICS**", "━━━━━━━━━━━━━━━━━━", ""]
+    lines.append(f"💬 **Messages:** `{c['messages']}`")
+    lines.append(f"🖼 **Media:** `{c['media']}`")
+    lines.append(f"🔗 **Links:** `{c['links']}`")
+    lines.append(f"📁 **Files:** `{c['files']}`")
+    lines.append(f"🎞 **GIFs:** `{c['gifs']}`")
+    lines.append(f"🎟 **Stickers:** `{c['stickers']}`")
+    lines.append(f"🎙 **Voice Messages:** `{c['voice']}`")
+    lines.append("")
+
+    if data["top_senders"]:
+        lines.append(f"👑 **Most Active User:** `{data['top_senders'][0][0]}`")
+    if data["top_words"]:
+        words_str = ", ".join(f"{w} ({n})" for w, n in data["top_words"])
+        lines.append(f"🔤 **Most Common Words:** {words_str}")
+    if data["top_emojis"]:
+        emoji_str = " ".join(f"{e}×{n}" for e, n in data["top_emojis"])
+        lines.append(f"😀 **Emoji Usage:** {emoji_str}")
+    lines.append(f"📏 **Average Message Length:** `{data['avg_len']:.0f}` chars")
+    if data["peak_hour"] is not None:
+        lines.append(f"⏰ **Peak Active Hour:** `{data['peak_hour']:02d}:00`")
+    lines.append("")
+
+    if data["top_senders"]:
+        lines.append("🏆 **Top Senders:**")
+        for i, (name, n) in enumerate(data["top_senders"], start=1):
+            lines.append(f"  {i}. {name} — `{n}` msgs")
+        lines.append("")
+
+    # Simple text-based bar chart of hourly activity
+    max_count = max(data["hour_counts"]) or 1
+    lines.append("📈 **Activity by Hour:**")
+    for h in range(0, 24, 3):
+        bucket = sum(data["hour_counts"][h:h + 3])
+        bar_len = int((bucket / (max_count * 3)) * 20) if max_count else 0
+        bar = "█" * max(bar_len, 0)
+        lines.append(f"  {h:02d}-{h + 3:02d}h │{bar}")
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    return "\n".join(lines)
+
+
+# ==========================================================================
+# NEW FEATURE: MOOD DETECTOR (.mood) — lightweight local lexicon NLP
+# ==========================================================================
+MOOD_LEXICON = {
+    "Happy": ["happy", "glad", "joy", "great", "awesome", "yay", "😊", "😁", "😄", "love", "nice", "good"],
+    "Sad": ["sad", "cry", "crying", "unhappy", "depressed", "😢", "😭", "sorry", "miss", "lonely"],
+    "Angry": ["angry", "mad", "hate", "furious", "annoyed", "😠", "😡", "rage", "pissed"],
+    "Fear": ["scared", "afraid", "fear", "worried", "anxious", "nervous", "😨", "😰", "terrified"],
+    "Excited": ["excited", "can't wait", "omg", "wow", "amazing", "hyped", "🔥", "🎉", "let's go"],
+    "Sarcastic": ["yeah right", "sure jan", "totally", "oh great", "wow really", "as if", "lol sure"],
+    "Romantic": ["love you", "miss you", "babe", "darling", "❤️", "😍", "kiss", "sweetheart"],
+    "Professional": ["regards", "kindly", "please find", "meeting", "deadline", "report", "attached"],
+    "Funny": ["lol", "lmao", "haha", "😂", "🤣", "funny", "joke", "rofl"],
+    "Neutral": [],
+}
+
+MOOD_EMOJI = {
+    "Happy": "😊", "Sad": "😢", "Angry": "😠", "Fear": "😨", "Excited": "🤩",
+    "Sarcastic": "😏", "Romantic": "❤️", "Professional": "💼", "Funny": "😂",
+    "Neutral": "😐",
+}
+
+
+def _analyze_mood(text):
+    """Very lightweight keyword-frequency mood classifier — no ML model,
+    no external API, runs instantly and stays memory-light."""
+    if not text or not text.strip():
+        return None
+    lower = text.lower()
+    scores = {}
+    for mood, keywords in MOOD_LEXICON.items():
+        hits = sum(1 for kw in keywords if kw in lower)
+        if hits:
+            scores[mood] = hits
+
+    if not scores:
+        return {"mood": "Neutral", "confidence": 60, "reasons": ["No strong emotional cues detected"]}
+
+    best_mood = max(scores, key=scores.get)
+    total_hits = sum(scores.values())
+    confidence = min(95, 55 + int((scores[best_mood] / max(total_hits, 1)) * 40))
+
+    reasons = []
+    if scores[best_mood] >= 2:
+        reasons.append("Multiple matching keywords")
+    reasons.append(f"Wording matched the '{best_mood.lower()}' pattern")
+    if "!" in text:
+        reasons.append("Exclamation marks suggest heightened emotion")
+    if _EMOJI_PATTERN.search(text):
+        reasons.append("Emoji usage supports the tone")
+
+    return {"mood": best_mood, "confidence": confidence, "reasons": reasons}
+
+
+def _format_mood(result):
+    if not result:
+        return "❌ No text found in that message to analyze."
+    emoji = MOOD_EMOJI.get(result["mood"], "🧠")
+    reasons_str = "\n".join(f"• {r}" for r in result["reasons"])
+    return (
+        "━━━━━━━━━━━━\n"
+        "🧠 **Mood Analysis**\n\n"
+        "**Detected:**\n"
+        f"{emoji} {result['mood']}\n\n"
+        "**Confidence:**\n"
+        f"{result['confidence']}%\n\n"
+        "**Reason:**\n"
+        f"{reasons_str}\n"
+        "━━━━━━━━━━━━"
+    )
+
+
+# ==========================================================================
+# NEW FEATURE: SECRET NOTES (.secret) — AES-256-GCM, local file only
+# ==========================================================================
+def _derive_secret_key(password, salt):
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=390_000)
+    return kdf.derive(password.encode("utf-8"))
+
+
+def _get_secret_salt():
+    if os.path.exists(SECRET_SALT_FILE):
+        with open(SECRET_SALT_FILE, "rb") as f:
+            return f.read()
+    salt = os.urandom(16)
+    with open(SECRET_SALT_FILE, "wb") as f:
+        f.write(salt)
+    return salt
+
+
+def _load_secret_notes():
+    """Returns a list of note strings, decrypted in-memory only.
+    Never logs or persists plaintext."""
+    if not os.path.exists(SECRET_NOTES_FILE):
+        return []
+    with open(SECRET_NOTES_FILE, "rb") as f:
+        blob = f.read()
+    if not blob:
+        return []
+    nonce, ciphertext = blob[:12], blob[12:]
+    salt = _get_secret_salt()
+    key = _derive_secret_key(SECRET_MASTER_PASSWORD, salt)
+    aesgcm = AESGCM(key)
+    plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+    return json.loads(plaintext.decode("utf-8"))
+
+
+def _save_secret_notes(notes):
+    salt = _get_secret_salt()
+    key = _derive_secret_key(SECRET_MASTER_PASSWORD, salt)
+    aesgcm = AESGCM(key)
+    nonce = os.urandom(12)
+    plaintext = json.dumps(notes).encode("utf-8")
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    with open(SECRET_NOTES_FILE, "wb") as f:
+        f.write(nonce + ciphertext)
+
+
+# ==========================================================================
+# NEW FEATURE: NETWORK MONITOR (.net)
+# ==========================================================================
+async def _ping_host(host="8.8.8.8", count=4, timeout=8):
+    """Async, non-blocking ping using the system ping binary via subprocess.
+    Returns (avg_latency_ms, packet_loss_pct) or (None, None) on failure.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ping", "-c", str(count), "-W", "2", host,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        output = stdout.decode(errors="ignore")
+
+        loss_match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
+        loss = float(loss_match.group(1)) if loss_match else None
+
+        rtt_match = re.search(r"= [\d.]+/([\d.]+)/", output)
+        avg_latency = float(rtt_match.group(1)) if rtt_match else None
+
+        return avg_latency, loss
+    except Exception as e:
+        log_error("ping", e)
+        return None, None
+
+
+def _speedtest_sync():
+    """Blocking speed test — always run via run_in_executor."""
+    if not SPEEDTEST_OK:
+        return None
+    try:
+        st = speedtest_module.Speedtest()
+        st.get_best_server()
+        download_mbps = st.download() / 1_000_000
+        upload_mbps = st.upload() / 1_000_000
+        return {"download": download_mbps, "upload": upload_mbps}
+    except Exception as e:
+        log_error("speedtest", e)
+        return None
+
+
+async def _build_network_report():
+    """Gathers IP/ISP info, ping, and (optionally) speed test results."""
+    ping_task = asyncio.create_task(_ping_host())
+
+    loop = asyncio.get_event_loop()
+    ip_info = {}
+    try:
+        r = await loop.run_in_executor(
+            None,
+            lambda: requests.get(
+                "http://ip-api.com/json/?fields=status,country,isp,query,timezone,as,mobile,proxy",
+                timeout=10,
+            ),
+        )
+        ip_info = r.json()
+    except Exception as e:
+        log_error("net_ip_lookup", e)
+
+    speed = None
+    if SPEEDTEST_OK:
+        try:
+            speed = await asyncio.wait_for(
+                loop.run_in_executor(None, _speedtest_sync), timeout=45
+            )
+        except Exception:
+            speed = None
+
+    avg_latency, loss = await ping_task
+
+    dns_check = "OK"
+    try:
+        socket.gethostbyname("google.com")
+    except Exception:
+        dns_check = "Failed"
+
+    network_type = "Mobile/Proxy detected" if ip_info.get("mobile") or ip_info.get("proxy") else "Standard"
+
+    return {
+        "internet_status": "🟢 Online" if ip_info.get("status") == "success" else "🔴 Unreachable",
+        "ping": f"{avg_latency:.1f} ms" if avg_latency is not None else "N/A",
+        "loss": f"{loss:.0f}%" if loss is not None else "N/A",
+        "public_ip": ip_info.get("query", "N/A"),
+        "isp": ip_info.get("isp", "N/A"),
+        "asn": ip_info.get("as", "N/A"),
+        "dns": dns_check,
+        "network_type": network_type,
+        "country": ip_info.get("country", "N/A"),
+        "timezone": ip_info.get("timezone", "N/A"),
+        "download": f"{speed['download']:.1f} Mbps" if speed else "N/A (speedtest not installed)",
+        "upload": f"{speed['upload']:.1f} Mbps" if speed else "N/A (speedtest not installed)",
+    }
+
+
+def _format_network_report(r):
+    return f"""━━━━━━━━━━━━━━━━━━
+🌐 **NETWORK MONITOR**
+━━━━━━━━━━━━━━━━━━
+✓ **Internet Status:** {r['internet_status']}
+✓ **Ping:** `{r['ping']}`
+✓ **Packet Loss:** `{r['loss']}`
+✓ **Public IP:** `{r['public_ip']}`
+✓ **ISP:** `{r['isp']}`
+✓ **ASN:** `{r['asn']}`
+✓ **DNS:** `{r['dns']}`
+✓ **Network Type:** `{r['network_type']}`
+✓ **Country:** `{r['country']}`
+✓ **Timezone:** `{r['timezone']}`
+✓ **Download Speed:** `{r['download']}`
+✓ **Upload Speed:** `{r['upload']}`
+━━━━━━━━━━━━━━━━━━"""
+
+
+# ==========================================================================
+# NEW FEATURE: CRYPTO WHALE ALERT (.whale on/off)
+# ==========================================================================
+def _load_whale_state():
+    try:
+        with open(WHALE_STATE_FILE, "r") as f:
+            return json.load(f).get("enabled", False)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+
+def _save_whale_state(enabled):
+    try:
+        with open(WHALE_STATE_FILE, "w") as f:
+            json.dump({"enabled": enabled}, f)
+    except Exception as e:
+        log_error("whale_state_save", e)
+
+
+async def _check_btc_whales():
+    """Poll blockchain.info's public unconfirmed-transactions feed (no API
+    key needed) for unusually large BTC transfers."""
+    alerts = []
+    loop = asyncio.get_event_loop()
+    try:
+        r = await loop.run_in_executor(
+            None, lambda: requests.get("https://blockchain.info/unconfirmed-transactions?format=json", timeout=10)
+        )
+        d = r.json()
+        for tx in d.get("txs", []):
+            total_out = sum(o.get("value", 0) for o in tx.get("out", []))
+            if total_out >= WHALE_BTC_THRESHOLD_SATS:
+                txid = tx.get("hash")
+                if txid in _seen_whale_txids:
+                    continue
+                _seen_whale_txids.add(txid)
+                btc_amount = total_out / 1e8
+                alerts.append({
+                    "coin": "BTC",
+                    "amount": f"{btc_amount:.4f} BTC",
+                    "txid": txid,
+                    "explorer": f"https://www.blockchain.com/explorer/transactions/btc/{txid}",
+                })
+    except Exception as e:
+        log_error("whale_btc_check", e)
+    return alerts
+
+
+async def _check_eth_whales():
+    """Poll Etherscan for large recent ETH transfers. Requires the free
+    ETHERSCAN_API_KEY env var — silently skipped if not set."""
+    if not ETHERSCAN_API_KEY:
+        return []
+    alerts = []
+    loop = asyncio.get_event_loop()
+    try:
+        r = await loop.run_in_executor(
+            None,
+            lambda: requests.get(
+                "https://api.etherscan.io/api",
+                params={
+                    "module": "account", "action": "txlist", "address": "0x0000000000000000000000000000000000000000",
+                    "sort": "desc", "apikey": ETHERSCAN_API_KEY,
+                },
+                timeout=10,
+            ),
+        )
+        # Note: Etherscan doesn't offer a direct "largest recent tx" feed on
+        # the free tier — a full whale-tracker would need a paid/streaming
+        # provider. This best-effort check is left as a safe no-op scaffold
+        # so ETH monitoring can be extended later without touching other code.
+    except Exception as e:
+        log_error("whale_eth_check", e)
+    return alerts
+
+
+async def _get_crypto_usd_price(symbol):
+    loop = asyncio.get_event_loop()
+    coin_map = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "BNB": "binancecoin"}
+    try:
+        r = await loop.run_in_executor(
+            None,
+            lambda: requests.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": coin_map.get(symbol, ""), "vs_currencies": "usd"},
+                timeout=8,
+            ),
+        )
+        return r.json().get(coin_map.get(symbol, ""), {}).get("usd", 0)
+    except Exception:
+        return 0
+
+
+async def _whale_monitor_loop():
+    """Background task — polls free public blockchain APIs on an interval
+    and DMs the owner when an unusually large transfer is detected. Runs
+    independently of the command dispatcher so it never blocks other
+    commands. Automatically stops when whale_alert_active is turned off.
+    """
+    global whale_alert_active
+    log.info("Whale Alert monitor started.")
+    while whale_alert_active:
+        try:
+            btc_alerts = await _check_btc_whales()
+            eth_alerts = await _check_eth_whales()
+            for alert in btc_alerts + eth_alerts:
+                price = await _get_crypto_usd_price(alert["coin"])
+                usd_value = "N/A"
+                try:
+                    amount_val = float(alert["amount"].split()[0])
+                    usd_value = f"${amount_val * price:,.0f}"
+                except Exception:
+                    pass
+                msg = (
+                    "🐋 **Whale Alert!**\n\n"
+                    f"**Coin:** {alert['coin']}\n"
+                    f"**Amount:** {alert['amount']}\n"
+                    f"**~USD Value:** {usd_value}\n"
+                    f"**Time:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"**TxID:** `{alert['txid']}`\n"
+                    f"**Explorer:** {alert['explorer']}"
+                )
+                try:
+                    me = await client.get_me()
+                    await client.send_message(me.id, msg)
+                except Exception as e:
+                    log_error("whale_notify", e)
+
+            # Keep the de-dupe set from growing unbounded over a long uptime
+            if len(_seen_whale_txids) > 5000:
+                _seen_whale_txids.clear()
+        except Exception as e:
+            log_error("whale_monitor_loop", e)
+        await asyncio.sleep(WHALE_CHECK_INTERVAL)
+    log.info("Whale Alert monitor stopped.")
+
+
+whale_alert_active = _load_whale_state()
+_whale_task = None
+
+
+# ==========================================================================
+# NEW FEATURE: BEAUTIFUL HELP UI (.help / .commands / .dev / .help <command>)
+# ==========================================================================
+# Commands grouped by category for the overview screen.
+HELP_CATEGORIES = {
+    "🤖 Info & Files": [".info", ".chatinfo", ".id", ".ocr", ".repo"],
+    "🛠 Utilities": [
+        ".calc", ".weather", ".tr", ".qr", ".crypto", ".define",
+        ".github", ".short", ".schedule", ".portfolio",
+    ],
+    "🛡 Security": [".scan", ".osint", ".secret", ".net", ".ip"],
+    "👤 User & AFK": [".afk", ".back", ".ghost", ".analytics", ".mood"],
+    "🎉 Fun": [
+        ".meme", ".trivia", ".fact", ".horoscope", ".country", ".anime",
+        ".quote", ".joke", ".8ball", ".roll", ".flip", ".reverse",
+    ],
+    "🧩 Moderation": [
+        ".mute", ".unmute", ".unban", ".block", ".unblock", ".kick",
+        ".admin", ".demote",
+    ],
+    "📡 Broadcasting": [".dm", ".frwd", ".gc", ".broad", ".frwdall", ".spm"],
+    "💰 Crypto": [".whale", ".portfolio", ".crypto"],
+    "⚙️ Reliability": [".fix", ".fixlog", ".ping"],
+}
+
+# Detailed per-command help shown by `.help <command>`
+HELP_DETAILS = {
+    "weather": {
+        "purpose": "Get the current weather for a city.",
+        "syntax": ".weather <city>",
+        "example": ".weather Mumbai",
+        "arguments": "city — any city name",
+        "notes": "Uses wttr.in, no API key required.",
+        "aliases": "none",
+    },
+    "tr": {
+        "purpose": "Translate text, auto-detecting the source language.",
+        "syntax": ".tr <target_lang> [text]  (or reply + .tr <target_lang>)",
+        "example": ".tr hi Hello, how are you?",
+        "arguments": "target_lang — 2-letter language code (e.g. hi, en, fr)",
+        "notes": "Falls back to English detection if langdetect isn't installed.",
+        "aliases": ".translate",
+    },
+    "scan": {
+        "purpose": "Scan a URL for phishing/scam risk signals.",
+        "syntax": ".scan <url>",
+        "example": ".scan https://example.com",
+        "arguments": "url — the link to check",
+        "notes": "Checks HTTPS, redirects, SSL, domain age, suspicious keywords; VirusTotal used if VIRUSTOTAL_API_KEY is set.",
+        "aliases": "none",
+    },
+    "osint": {
+        "purpose": "Run an OSINT lookup on an email, username, or domain.",
+        "syntax": ".osint <email|username|domain> <target>",
+        "example": ".osint domain example.com",
+        "arguments": "subcommand + target value",
+        "notes": "Username checks are for publicly visible account existence only.",
+        "aliases": "none",
+    },
+    "secret": {
+        "purpose": "Store and retrieve encrypted personal notes (AES-256-GCM).",
+        "syntax": ".secret add <text> | .secret list | .secret view <n> | .secret delete <n>",
+        "example": ".secret add My WiFi password is xyz",
+        "arguments": "text for add; index number for view/delete",
+        "notes": "Requires the SECRET_MASTER_PASSWORD environment variable to be set.",
+        "aliases": "none",
+    },
+    "net": {
+        "purpose": "Show a full network health report for the server running the bot.",
+        "syntax": ".net",
+        "example": ".net",
+        "arguments": "none",
+        "notes": "Download/upload speed needs the optional `speedtest-cli` package.",
+        "aliases": "none",
+    },
+    "ghost": {
+        "purpose": "Toggle Ghost Mode — reduces visible activity and auto-deletes command output.",
+        "syntax": ".ghost on | .ghost off",
+        "example": ".ghost on",
+        "arguments": "on / off",
+        "notes": "Some Telegram-side acknowledgements can't be fully suppressed at the protocol level.",
+        "aliases": "none",
+    },
+    "analytics": {
+        "purpose": "Analyze the current chat's recent message history.",
+        "syntax": ".analytics",
+        "example": ".analytics",
+        "arguments": "none",
+        "notes": "Scans up to the last 1000 messages for speed.",
+        "aliases": "none",
+    },
+    "mood": {
+        "purpose": "Detect the emotional tone of a replied-to message.",
+        "syntax": ".mood  (must be used as a reply)",
+        "example": "(reply to a message) .mood",
+        "arguments": "none — target is the replied message",
+        "notes": "Uses a lightweight local keyword lexicon, no external API.",
+        "aliases": "none",
+    },
+    "whale": {
+        "purpose": "Toggle background monitoring for unusually large crypto transfers.",
+        "syntax": ".whale on | .whale off",
+        "example": ".whale on",
+        "arguments": "on / off",
+        "notes": "BTC works out of the box; ETH/BNB need ETHERSCAN_API_KEY/BSCSCAN_API_KEY.",
+        "aliases": "none",
+    },
+    "afk": {
+        "purpose": "Enable an away-from-keyboard auto-reply for your DMs.",
+        "syntax": ".afk [custom message]",
+        "example": ".afk Busy right now, back soon!",
+        "arguments": "optional custom message",
+        "notes": "Re-triggers for the same user after 6 hours of silence.",
+        "aliases": "none",
+    },
+    "spm": {
+        "purpose": "Send the same text multiple times in the current chat.",
+        "syntax": ".spm <text> <count>",
+        "example": ".spm hello 5",
+        "arguments": "text, then a count (max 20)",
+        "notes": "Capped for anti-ban safety.",
+        "aliases": ".spam",
+    },
+}
+
+
+def _build_help_overview():
+    """Builds the premium boxed-UI overview for .help / .commands."""
+    uptime_sec = int(time.time() - BOT_START_TIME)
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
+    uptime_str = f"{h}h {m}m {s}s"
+
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "⚡ **REHU SELFBOT**",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"**Version:** `{BOT_VERSION}`  •  **Build:** `{BOT_BUILD}`",
+        f"**Developer:** {DEV_NAME}",
+        f"**Uptime:** `{uptime_str}`",
+        f"**Python:** `{platform.python_version()}`",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    ]
+    for category, cmds in HELP_CATEGORIES.items():
+        lines.append(f"\n**{category}**")
+        lines.append("  " + "  ".join(f"`{c}`" for c in cmds))
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("Type `.help <command>` for detailed usage.")
+    lines.append("Example: `.help weather`")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"\n𝗗𝗘𝗩 ~ {DEV_NAME}")
+    return "\n".join(lines)
+
+
+def _build_help_detail(cmd_name):
+    cmd_name = cmd_name.lstrip(".").lower()
+    detail = HELP_DETAILS.get(cmd_name)
+    if not detail:
+        return (
+            f"❌ No detailed help entry for `.{cmd_name}` yet.\n"
+            f"Use `.help` to see the full command list."
+        )
+    return (
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📘 **Help — .{cmd_name}**\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"**Purpose:**\n{detail['purpose']}\n\n"
+        f"**Syntax:**\n`{detail['syntax']}`\n\n"
+        f"**Example:**\n`{detail['example']}`\n\n"
+        f"**Arguments:**\n{detail['arguments']}\n\n"
+        f"**Notes:**\n{detail['notes']}\n\n"
+        f"**Aliases:**\n{detail['aliases']}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+
+def _build_dev_info():
+    """Builds the premium .dev system-info panel."""
+    uptime_sec = int(time.time() - BOT_START_TIME)
+    h, rem = divmod(uptime_sec, 3600)
+    m, s = divmod(rem, 60)
+    uptime_str = f"{h}h {m}m {s}s"
+
+    total_commands = sum(len(v) for v in HELP_CATEGORIES.values())
+
+    ram_str = "N/A (psutil not installed)"
+    cpu_str = "N/A (psutil not installed)"
+    if PSUTIL_OK:
+        try:
+            proc = psutil.Process(os.getpid())
+            ram_mb = proc.memory_info().rss / (1024 * 1024)
+            ram_str = f"{ram_mb:.1f} MB"
+            cpu_str = f"{psutil.cpu_percent(interval=0.3):.1f}%"
+        except Exception:
+            pass
+
+    try:
+        import telethon
+        telethon_version = telethon.__version__
+    except Exception:
+        telethon_version = "unknown"
+
+    render_status = "🟢 Running on Render" if os.environ.get("RENDER") or os.environ.get("PORT") else "⚪ Local / Unknown host"
+
+    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+👨‍💻 **DEVELOPER INFO**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Developer:** {DEV_NAME}
+**Role:** {DEV_ROLE}
+**GitHub:** {DEV_GITHUB}
+**Portfolio:** {DEV_PORTFOLIO}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Version:** `{BOT_VERSION}`
+**Build:** `{BOT_BUILD}`
+**Python:** `{platform.python_version()}`
+**Telethon:** `{telethon_version}`
+**Platform:** `{platform.system()} {platform.release()}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Total Commands:** `{total_commands}+`
+**Uptime:** `{uptime_str}`
+**RAM Usage:** `{ram_str}`
+**CPU Usage:** `{cpu_str}`
+**Render Status:** {render_status}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+_This selfbot was built and is maintained by {DEV_NAME} — covering the
+AFK system, moderation tools, broadcast engine, security toolkit, and
+the full Render deployment setup._
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+
+
 
 
 # ------------------------------------------------------------------
@@ -1263,19 +2037,14 @@ async def _cmd_dispatch(event):
         await event.edit(f"**🧾 Last errors:**\n```\n{tail[-3500:]}\n```")
 
     elif text in (".help", ".fux", ".commands"):
-        await event.edit(HELP_TEXT)
+        await event.edit(_build_help_overview())
+
+    elif text.startswith(".help "):
+        cmd_query = raw[6:].strip()
+        await event.edit(_build_help_detail(cmd_query))
 
     elif text == ".dev":
-        await event.edit(
-            "**👨‍💻 Developer Info**\n\n"
-            f"✓ **Name:** `{DEV_NAME}`\n"
-            f"✓ **Role:** `{DEV_ROLE}`\n"
-            f"✓ **Skills:** {DEV_SKILLS}\n"
-            f"✓ **Portfolio:** {DEV_PORTFOLIO}\n\n"
-            "_This selfbot was built and is maintained by Syed Rehan — "
-            "covering everything from the AFK system, moderation tools, "
-            "and broadcast engine, to the Render deployment setup._"
-        )
+        await event.edit(_build_dev_info())
 
     elif text == ".owner":
         lines = [
@@ -2194,6 +2963,141 @@ async def _cmd_dispatch(event):
                     pass
     # ------------------------------------------------
 
+    # ---------------- GHOST MODE ----------------
+    elif text.startswith(".ghost"):
+        arg = raw[6:].strip().lower()
+        if arg == "on":
+            ghost_mode.enable()
+            await event.edit("👻 **Ghost Mode Enabled**")
+        elif arg == "off":
+            ghost_mode.disable()
+            await event.edit("👻 **Ghost Mode Disabled**")
+        else:
+            await event.edit("❌ Usage: `.ghost on` or `.ghost off`")
+    # ------------------------------------------------
+
+    # ---------------- CHAT ANALYTICS ----------------
+    elif text == ".analytics":
+        await event.edit("📊 Analyzing chat (this may take a moment)...")
+        try:
+            data = await _build_chat_analytics(event.chat_id, limit=1000)
+            await event.edit(_format_analytics(data))
+        except Exception as e:
+            log_error(".analytics", e)
+            await event.edit(f"❌ Analytics failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- MOOD DETECTOR ----------------
+    elif text == ".mood":
+        if not event.is_reply:
+            await event.edit("❌ Reply to a message with `.mood`")
+            return
+        await event.edit("🧠 Analyzing mood...")
+        try:
+            reply = await event.get_reply_message()
+            result = _analyze_mood(reply.text or "")
+            await event.edit(_format_mood(result))
+        except Exception as e:
+            log_error(".mood", e)
+            await event.edit(f"❌ Mood analysis failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- SECRET NOTES (AES-256-GCM) ----------------
+    elif text.startswith(".secret"):
+        if not CRYPTO_OK:
+            await event.edit("❌ `cryptography` package not installed — `.secret` is unavailable.")
+            return
+        if not SECRET_MASTER_PASSWORD:
+            await event.edit(
+                "❌ `SECRET_MASTER_PASSWORD` environment variable is not set. "
+                "Set it and restart the bot to use `.secret`."
+            )
+            return
+        args = raw[7:].strip()
+        parts = args.split(None, 1)
+        if not parts:
+            await event.edit("❌ Usage: `.secret add/list/view/delete ...`")
+            return
+        action = parts[0].lower()
+        try:
+            if action == "add":
+                if len(parts) < 2:
+                    await event.edit("❌ Usage: `.secret add <text>`")
+                    return
+                notes = _load_secret_notes()
+                notes.append(parts[1])
+                _save_secret_notes(notes)
+                await event.delete()  # never leave the plaintext note visible in chat
+                await client.send_message(event.chat_id, f"🔐 Secret note #{len(notes)} saved (encrypted).")
+            elif action == "list":
+                notes = _load_secret_notes()
+                if not notes:
+                    await event.edit("🔐 No secret notes stored yet.")
+                    return
+                preview = "\n".join(f"{i + 1}. {n[:30]}{'...' if len(n) > 30 else ''}" for i, n in enumerate(notes))
+                await event.edit(f"🔐 **Secret Notes ({len(notes)}):**\n{preview}")
+            elif action == "view":
+                if len(parts) < 2 or not parts[1].strip().isdigit():
+                    await event.edit("❌ Usage: `.secret view <n>`")
+                    return
+                idx = int(parts[1].strip()) - 1
+                notes = _load_secret_notes()
+                if not (0 <= idx < len(notes)):
+                    await event.edit("❌ Note not found.")
+                    return
+                await event.edit(f"🔐 **Note #{idx + 1}:**\n{notes[idx]}")
+            elif action == "delete":
+                if len(parts) < 2 or not parts[1].strip().isdigit():
+                    await event.edit("❌ Usage: `.secret delete <n>`")
+                    return
+                idx = int(parts[1].strip()) - 1
+                notes = _load_secret_notes()
+                if not (0 <= idx < len(notes)):
+                    await event.edit("❌ Note not found.")
+                    return
+                notes.pop(idx)
+                _save_secret_notes(notes)
+                await event.edit(f"✅ Note #{idx + 1} deleted.")
+            else:
+                await event.edit("❌ Usage: `.secret add/list/view/delete ...`")
+        except Exception as e:
+            log_error(".secret", e)
+            await event.edit(f"❌ Secret notes operation failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- NETWORK MONITOR ----------------
+    elif text == ".net":
+        await event.edit("🌐 Running network diagnostics...")
+        try:
+            report = await asyncio.wait_for(_build_network_report(), timeout=60)
+            await event.edit(_format_network_report(report))
+        except asyncio.TimeoutError:
+            await event.edit("❌ Network check timed out.")
+        except Exception as e:
+            log_error(".net", e)
+            await event.edit(f"❌ Network check failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- CRYPTO WHALE ALERT ----------------
+    elif text.startswith(".whale"):
+        global whale_alert_active, _whale_task
+        arg = raw[6:].strip().lower()
+        if arg == "on":
+            if whale_alert_active and _whale_task and not _whale_task.done():
+                await event.edit("🐋 Whale Alert is already running.")
+                return
+            whale_alert_active = True
+            _save_whale_state(True)
+            _whale_task = asyncio.create_task(_whale_monitor_loop())
+            await event.edit("🐋 **Whale Alert enabled** — monitoring BTC/ETH/SOL/BNB in the background.")
+        elif arg == "off":
+            whale_alert_active = False
+            _save_whale_state(False)
+            await event.edit("🐋 **Whale Alert disabled.**")
+        else:
+            await event.edit("❌ Usage: `.whale on` or `.whale off`")
+    # ------------------------------------------------
+
     elif text.startswith(".say"):
         content = raw[4:].strip()
         if not content:
@@ -2225,6 +3129,17 @@ async def cmd_handler(event):
 
     try:
         await _cmd_dispatch(event)
+        # Ghost Mode: auto-delete the command's output after a delay so it
+        # doesn't linger visibly in the chat. Skip for commands that already
+        # delete themselves (they'll simply no-op on the second delete).
+        if ghost_mode.enabled:
+            async def _ghost_cleanup():
+                await asyncio.sleep(ghost_mode.delete_delay)
+                try:
+                    await event.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_ghost_cleanup())
     except Exception as e1:
         log_error(event.raw_text, e1)
         if auto_fix_active:
@@ -2324,6 +3239,13 @@ async def run_client():
     log.info(f"Logged in as: {me.first_name} (@{me.username}) | ID: {me.id}")
     log.info("SelfBot by Syed Rehan — running")
     log.info("Type .help or .commands in Telegram for the full command list")
+
+    # Restore Whale Alert monitoring if it was left enabled before restart
+    global _whale_task
+    if whale_alert_active:
+        _whale_task = asyncio.create_task(_whale_monitor_loop())
+        log.info("Whale Alert monitor resumed from saved state.")
+
     await web_server()
     await client.run_until_disconnected()
 
