@@ -121,7 +121,7 @@ DEV_ROLE = "Security Researcher & Ethical Hacker"
 DEV_PORTFOLIO = "https://rehuux.vercel.app"
 DEV_SKILLS = (
     "CyberSecurity, Telegram Bot Development, "
-    "Security/OSINT, and AI Integration"
+    "Security/OSINT, Linux, and AI Integration"
 )
 DEV_GITHUB = "https://github.com/rehuux"  # update to your actual GitHub if different
 BOT_VERSION = "3.0.0"
@@ -758,11 +758,35 @@ def _daily_horoscope(sign):
 # ==========================================================================
 def _country_info(name):
     try:
-        r = requests.get(f"https://restcountries.com/v3.1/name/{name}", timeout=10)
+        # restcountries.com now REQUIRES an explicit `fields` param — without
+        # it, the API returns an error payload instead of country data (this
+        # was the actual cause of the earlier "lookup failed: 0" error).
+        fields = "name,capital,region,subregion,population,languages,currencies,flag,maps"
+        r = requests.get(
+            f"https://restcountries.com/v3.1/name/{name}",
+            params={"fields": fields},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
         if r.status_code != 200:
+            return f"❌ Country '{name}' not found (HTTP {r.status_code})."
+
+        try:
+            payload = r.json()
+        except ValueError:
+            return "❌ Country lookup failed: API returned an unreadable response."
+
+        # The API can return either a list of matches or an error dict
+        # (e.g. {"status":404,"message":"Not Found"}) — handle both so a
+        # shape mismatch never surfaces as a raw KeyError to the user.
+        if isinstance(payload, dict):
+            msg = payload.get("message", "Country not found.")
+            return f"❌ Country lookup failed: {msg}"
+        if not isinstance(payload, list) or not payload:
             return f"❌ Country '{name}' not found."
-        d = r.json()[0]
-        capital = ", ".join(d.get("capital", ["N/A"]))
+
+        d = payload[0]
+        capital = ", ".join(d.get("capital", ["N/A"])) or "N/A"
         currencies = ", ".join(
             f"{v.get('name')} ({v.get('symbol', '')})" for v in d.get("currencies", {}).values()
         ) or "N/A"
@@ -772,14 +796,18 @@ def _country_info(name):
         subregion = d.get("subregion", "N/A")
         maps_link = d.get("maps", {}).get("googleMaps", "")
         flag_emoji = d.get("flag", "")
-        return f"""🌍 **{d['name']['common']}** {flag_emoji}
-✓ **Official Name:** `{d['name'].get('official', 'N/A')}`
+        common_name = d.get("name", {}).get("common", name)
+        official_name = d.get("name", {}).get("official", "N/A")
+        return f"""🌍 **{common_name}** {flag_emoji}
+✓ **Official Name:** `{official_name}`
 ✓ **Capital:** `{capital}`
 ✓ **Region:** `{region} / {subregion}`
 ✓ **Population:** `{population:,}`
 ✓ **Languages:** `{languages}`
 ✓ **Currencies:** `{currencies}`
 ✓ **Map:** {maps_link}"""
+    except requests.exceptions.Timeout:
+        return "❌ Country lookup timed out."
     except Exception as e:
         return f"❌ Country lookup failed: {e}"
 
@@ -788,19 +816,40 @@ def _country_info(name):
 # NEW FEATURE: ANIME LOOKUP (.anime)
 # ==========================================================================
 def _anime_info(name):
-    try:
-        r = requests.get(
-            "https://api.jikan.moe/v4/anime",
-            params={"q": name, "limit": 1},
-            timeout=10,
-        )
-        d = r.json()
-        results = d.get("data", [])
-        if not results:
-            return f"❌ Anime '{name}' not found."
-        a = results[0]
-        genres = ", ".join(g["name"] for g in a.get("genres", [])) or "N/A"
-        return f"""🎬 **{a.get('title', name)}**
+    last_status = None
+    for attempt in range(2):  # try once, retry once on transient failure
+        try:
+            r = requests.get(
+                "https://api.jikan.moe/v4/anime",
+                params={"q": name, "limit": 1},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10,
+            )
+            last_status = r.status_code
+            if r.status_code == 429:
+                time.sleep(1.5)  # brief backoff, this runs in a worker thread
+                continue
+            if r.status_code != 200:
+                if attempt == 0:
+                    time.sleep(1)
+                    continue
+                return f"❌ Anime lookup failed (HTTP {r.status_code}). Try again shortly."
+
+            try:
+                d = r.json()
+            except ValueError:
+                return "❌ Anime lookup failed: API returned an unreadable response."
+
+            results = d.get("data", [])
+            if not results:
+                if attempt == 0:
+                    time.sleep(1)
+                    continue
+                return f"❌ Anime '{name}' not found."
+
+            a = results[0]
+            genres = ", ".join(g["name"] for g in a.get("genres", [])) or "N/A"
+            return f"""🎬 **{a.get('title', name)}**
 ✓ **Type:** `{a.get('type', 'N/A')}`
 ✓ **Episodes:** `{a.get('episodes', 'N/A')}`
 ✓ **Status:** `{a.get('status', 'N/A')}`
@@ -809,8 +858,19 @@ def _anime_info(name):
 ✓ **Aired:** `{a.get('aired', {}).get('string', 'N/A')}`
 ✓ **Synopsis:** {(a.get('synopsis') or 'N/A')[:400]}
 ✓ **URL:** {a.get('url', 'N/A')}"""
-    except Exception as e:
-        return f"❌ Anime lookup failed: {e}"
+        except requests.exceptions.Timeout:
+            if attempt == 0:
+                continue
+            return "❌ Anime lookup timed out."
+        except Exception as e:
+            log_error(".anime", e)
+            if attempt == 0:
+                continue
+            return f"❌ Anime lookup failed: {e}"
+
+    if last_status == 429:
+        return "❌ Anime lookup rate-limited by the API. Please wait a moment and try again."
+    return f"❌ Anime '{name}' not found."
 
 
 # ==========================================================================
@@ -1775,17 +1835,199 @@ _whale_task = None
 
 
 # ==========================================================================
+# NEW FEATURE: FLAIR (.flair) — honest custom name decoration
+# ==========================================================================
+# NOTE: this intentionally does NOT mimic Telegram's official verification
+# checkmark or any other platform trust indicator. It's a purely cosmetic
+# name decoration, always shown with a disclaimer, so it can never be
+# mistaken for an official "verified" status.
+FLAIR_STATE_FILE = "flair_state.json"
+FLAIR_STYLES = {
+    "1": {"label": "Premium", "template": "⚡ {name}", "desc": "Lightning-bolt premium style"},
+    "2": {"label": "Elite", "template": "🔥 {name} 🔥", "desc": "Flame-accented elite style"},
+    "3": {"label": "Pro", "template": "💎 {name} [PRO]", "desc": "Diamond-accented pro tag"},
+}
+FLAIR_DISCLAIMER = "⚠️ _This is a custom decorative flair — not an official Telegram verification badge._"
+
+
+def _load_flair_state():
+    try:
+        with open(FLAIR_STATE_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_flair_state(state):
+    with open(FLAIR_STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+def _build_flair_preview_all(current_name):
+    lines = ["🎨 **Flair Preview** _(not applied yet)_\n"]
+    for key, style in FLAIR_STYLES.items():
+        preview = style["template"].format(name=current_name)
+        lines.append(f"**{key}. {style['label']}** — {style['desc']}\n`{preview}`\n")
+    lines.append(f"Use `.flair apply <1/2/3>` to apply, or `.flair <1/2/3>` to preview one.")
+    lines.append(f"\n{FLAIR_DISCLAIMER}")
+    return "\n".join(lines)
+
+
+def _build_flair_preview_one(key, current_name):
+    style = FLAIR_STYLES.get(key)
+    if not style:
+        return "❌ Invalid style. Use `.flair 1`, `.flair 2`, or `.flair 3`."
+    preview = style["template"].format(name=current_name)
+    return (
+        f"🎨 **Flair Preview — {style['label']}**\n`{preview}`\n\n"
+        f"Use `.flair apply {key}` to actually apply this to your display name.\n\n"
+        f"{FLAIR_DISCLAIMER}"
+    )
+
+
+# ==========================================================================
+# NEW FEATURE: QR CODE SCANNER (.scanqr) — reply to an image containing a QR
+# ==========================================================================
+def _decode_qr(image_path):
+    """Decode a QR code from a local image via a free public API
+    (no local heavy image-processing libs needed)."""
+    try:
+        with open(image_path, "rb") as f:
+            r = requests.post(
+                "https://api.qrserver.com/v1/read-qr-code/",
+                files={"file": f},
+                timeout=15,
+            )
+        if r.status_code != 200:
+            return f"❌ QR decode failed (HTTP {r.status_code})."
+        data = r.json()
+        symbol = data[0].get("symbol", [{}])[0]
+        if symbol.get("error"):
+            return "❌ No QR code found in that image."
+        return symbol.get("data") or "❌ No QR code found in that image."
+    except requests.exceptions.Timeout:
+        return "❌ QR decode timed out."
+    except Exception as e:
+        return f"❌ QR decode failed: {e}"
+
+
+# ==========================================================================
+# NEW FEATURE: HASH GENERATOR (.hash) — local, instant, no API needed
+# ==========================================================================
+def _generate_hashes(text):
+    import hashlib
+    data = text.encode("utf-8")
+    return {
+        "MD5": hashlib.md5(data).hexdigest(),
+        "SHA1": hashlib.sha1(data).hexdigest(),
+        "SHA256": hashlib.sha256(data).hexdigest(),
+        "SHA512": hashlib.sha512(data).hexdigest(),
+    }
+
+
+def _format_hashes(text, hashes):
+    lines = [f"🔑 **Hashes for:** `{text[:50]}{'...' if len(text) > 50 else ''}`\n"]
+    for algo, value in hashes.items():
+        lines.append(f"**{algo}:**\n`{value}`\n")
+    return "\n".join(lines)
+
+
+# ==========================================================================
+# NEW FEATURE: CURRENCY CONVERTER (.currency)
+# ==========================================================================
+def _convert_currency(amount, from_cur, to_cur):
+    try:
+        r = requests.get(
+            f"https://api.exchangerate-api.com/v4/latest/{from_cur.upper()}",
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return f"❌ Currency lookup failed (HTTP {r.status_code}). Check the currency codes."
+        d = r.json()
+        rates = d.get("rates", {})
+        to_cur_upper = to_cur.upper()
+        if to_cur_upper not in rates:
+            return f"❌ Unknown currency code '{to_cur_upper}'."
+        rate = rates[to_cur_upper]
+        converted = amount * rate
+        return (
+            f"💱 **Currency Conversion**\n\n"
+            f"`{amount:,.2f} {from_cur.upper()}` = `{converted:,.2f} {to_cur_upper}`\n"
+            f"**Rate:** `1 {from_cur.upper()} = {rate:.4f} {to_cur_upper}`"
+        )
+    except requests.exceptions.Timeout:
+        return "❌ Currency conversion timed out."
+    except Exception as e:
+        return f"❌ Currency conversion failed: {e}"
+
+
+# ==========================================================================
 # NEW FEATURE: BEAUTIFUL HELP UI (.help / .commands / .dev / .help <command>)
 # ==========================================================================
 # Commands grouped by category for the overview screen.
+# ==========================================================================
+# NEW FEATURE: CUSTOM FLAIR BADGE (.flair) — honest, non-impersonating style
+# ==========================================================================
+# These are decorative personal-style badges only. They intentionally do
+# NOT mimic Telegram's actual verification checkmark or any official trust
+# indicator — the goal is self-expression, not making anyone think this is
+# an officially verified account.
+FLAIR_STYLES = {
+    "1": {"name": "⚡ Bolt", "template": "⚡ {name}"},
+    "2": {"name": "🛠 Builder", "template": "🛠 {name} | dev"},
+    "3": {"name": "🚀 Rocket", "template": "🚀 {name}"},
+}
+
+
+def _flair_preview(style_key, current_name):
+    style = FLAIR_STYLES.get(style_key)
+    if not style:
+        return None
+    preview = style["template"].format(name=current_name)
+    return preview
+
+
+# ==========================================================================
+# BONUS FEATURES: PASSWORD GENERATOR, BASE64 TOOL, HASH CALCULATOR
+# ==========================================================================
+import string as _string_mod
+import base64 as _base64_mod
+import hashlib as _hashlib_mod
+
+
+def _generate_password(length=16):
+    length = max(8, min(length, 64))  # sane bounds
+    alphabet = _string_mod.ascii_letters + _string_mod.digits + "!@#$%^&*()-_=+"
+    return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+
+
+def _base64_tool(action, text):
+    try:
+        if action == "encode":
+            return _base64_mod.b64encode(text.encode("utf-8")).decode("utf-8")
+        elif action == "decode":
+            return _base64_mod.b64decode(text.encode("utf-8")).decode("utf-8", errors="replace")
+        return None
+    except Exception as e:
+        return f"❌ Base64 {action} failed: {e}"
+
+
+def _hash_text(text):
+    return {
+        "MD5": _hashlib_mod.md5(text.encode("utf-8")).hexdigest(),
+        "SHA1": _hashlib_mod.sha1(text.encode("utf-8")).hexdigest(),
+        "SHA256": _hashlib_mod.sha256(text.encode("utf-8")).hexdigest(),
+    }
+
+
 HELP_CATEGORIES = {
     "🤖 Info & Files": [".info", ".chatinfo", ".id", ".ocr", ".repo"],
     "🛠 Utilities": [
         ".calc", ".weather", ".tr", ".qr", ".crypto", ".define",
-        ".github", ".short", ".schedule", ".portfolio",
+        ".github", ".short", ".schedule", ".portfolio", ".currency",
     ],
-    "🛡 Security": [".scan", ".osint", ".secret", ".net", ".ip"],
-    "👤 User & AFK": [".afk", ".back", ".ghost", ".analytics", ".mood"],
+    "🛡 Security": [".scan", ".osint", ".secret", ".net", ".ip", ".genpass", ".b64", ".hash"],
+    "👤 User & AFK": [".afk", ".back", ".ghost", ".analytics", ".mood", ".flair"],
     "🎉 Fun": [
         ".meme", ".trivia", ".fact", ".horoscope", ".country", ".anime",
         ".quote", ".joke", ".8ball", ".roll", ".flip", ".reverse",
@@ -1896,6 +2138,38 @@ HELP_DETAILS = {
         "arguments": "text, then a count (max 20)",
         "notes": "Capped for anti-ban safety.",
         "aliases": ".spam",
+    },
+    "flair": {
+        "purpose": "Preview and apply a decorative name-badge style to your own profile.",
+        "syntax": ".flair | .flair <1/2/3> | .flair <1/2/3> apply",
+        "example": ".flair 1 apply",
+        "arguments": "style number (1–3), optional 'apply' to commit the change",
+        "notes": "These are honest personal-style badges — they don't mimic Telegram's official verification checkmark.",
+        "aliases": "none",
+    },
+    "genpass": {
+        "purpose": "Generate a cryptographically random password.",
+        "syntax": ".genpass [length]",
+        "example": ".genpass 20",
+        "arguments": "optional length, 8–64 (default 16)",
+        "notes": "Uses random.SystemRandom() (CSPRNG), not the regular PRNG.",
+        "aliases": "none",
+    },
+    "b64": {
+        "purpose": "Encode or decode text using Base64.",
+        "syntax": ".b64 encode <text> | .b64 decode <text>",
+        "example": ".b64 encode Hello World",
+        "arguments": "encode/decode, then the text",
+        "notes": "Purely local, no network call.",
+        "aliases": "none",
+    },
+    "hash": {
+        "purpose": "Compute MD5, SHA1, and SHA256 hashes of text.",
+        "syntax": ".hash <text>",
+        "example": ".hash Hello World",
+        "arguments": "any text",
+        "notes": "Purely local, no network call.",
+        "aliases": "none",
     },
 }
 
@@ -2856,7 +3130,7 @@ async def _cmd_dispatch(event):
     # ------------------------------------------------
 
     # ---------------- SCAM URL DETECTOR ----------------
-    elif text.startswith(".scan"):
+    elif text.startswith(".scan ") or text == ".scan":
         target_url = raw[5:].strip()
         if not target_url:
             await event.edit("❌ Usage: `.scan https://example.com`")
@@ -3096,6 +3370,210 @@ async def _cmd_dispatch(event):
             await event.edit("🐋 **Whale Alert disabled.**")
         else:
             await event.edit("❌ Usage: `.whale on` or `.whale off`")
+    # ------------------------------------------------
+
+    # ---------------- FLAIR (honest custom badge) ----------------
+    elif text.startswith(".flair"):
+        args = raw[6:].strip()
+        try:
+            me = await client.get_me()
+            current_name = me.first_name or "You"
+        except Exception:
+            current_name = "You"
+
+        if not args:
+            await event.edit(_build_flair_preview_all(current_name))
+        elif args in ("1", "2", "3"):
+            await event.edit(_build_flair_preview_one(args, current_name))
+        elif args.startswith("apply "):
+            key = args[6:].strip()
+            style = FLAIR_STYLES.get(key)
+            if not style:
+                await event.edit("❌ Usage: `.flair apply 1` / `2` / `3`")
+                return
+            try:
+                state = _load_flair_state()
+                if "original_name" not in state:
+                    state["original_name"] = current_name
+                new_name = style["template"].format(name=state["original_name"])
+                await client(functions.account.UpdateProfileRequest(first_name=new_name))
+                state["applied"] = key
+                _save_flair_state(state)
+                await event.edit(
+                    f"✅ Flair applied: `{new_name}`\n\n{FLAIR_DISCLAIMER}"
+                )
+            except Exception as e:
+                log_error(".flair apply", e)
+                await event.edit(f"❌ Failed to apply flair: {e}")
+        elif args == "reset":
+            try:
+                state = _load_flair_state()
+                original = state.get("original_name")
+                if not original:
+                    await event.edit("ℹ️ No flair has been applied yet.")
+                    return
+                await client(functions.account.UpdateProfileRequest(first_name=original))
+                state.pop("applied", None)
+                _save_flair_state(state)
+                await event.edit(f"✅ Flair removed — name reset to `{original}`.")
+            except Exception as e:
+                log_error(".flair reset", e)
+                await event.edit(f"❌ Failed to reset flair: {e}")
+        else:
+            await event.edit("❌ Usage: `.flair` / `.flair 1-3` / `.flair apply 1-3` / `.flair reset`")
+    # ------------------------------------------------
+
+    # ---------------- QR CODE SCANNER ----------------
+    elif text == ".scanqr":
+        if not event.is_reply:
+            await event.edit("❌ Reply to an image containing a QR code with `.scanqr`")
+            return
+        reply = await event.get_reply_message()
+        is_image = bool(reply.photo) or (
+            reply.document and reply.document.mime_type
+            and reply.document.mime_type.startswith("image/")
+        )
+        if not is_image:
+            await event.edit("❌ Reply to an image containing a QR code with `.scanqr`")
+            return
+        await event.edit("🔍 Decoding QR code...")
+        img_path = os.path.join(TEMP_DIR, f"{uuid4().hex}.jpg")
+        try:
+            await client.download_media(reply, file=img_path)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _decode_qr, img_path)
+            if result.startswith("❌"):
+                await event.edit(result)
+            else:
+                await event.edit(f"🔳 **QR Content:**\n`{result}`")
+        except Exception as e:
+            log_error(".scanqr", e)
+            await event.edit(f"❌ QR decode failed: {e}")
+        finally:
+            if os.path.exists(img_path):
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
+    # ------------------------------------------------
+
+    # ---------------- HASH GENERATOR ----------------
+    elif text.startswith(".hash"):
+        content = raw[5:].strip()
+        if not content:
+            await event.edit("❌ Usage: `.hash <text>`")
+            return
+        try:
+            hashes = _generate_hashes(content)
+            await event.edit(_format_hashes(content, hashes))
+        except Exception as e:
+            log_error(".hash", e)
+            await event.edit(f"❌ Hash generation failed: {e}")
+    # ------------------------------------------------
+
+    # ---------------- CURRENCY CONVERTER ----------------
+    elif text.startswith(".currency"):
+        args = raw[9:].strip().split()
+        if len(args) != 3:
+            await event.edit("❌ Usage: `.currency <amount> <from> <to>` e.g. `.currency 100 USD INR`")
+            return
+        amount_str, from_cur, to_cur = args
+        try:
+            amount = float(amount_str)
+        except ValueError:
+            await event.edit("❌ Amount must be a number.")
+            return
+        await event.edit(f"💱 Converting **{amount} {from_cur.upper()}** to **{to_cur.upper()}**...")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _convert_currency, amount, from_cur, to_cur)
+        await event.edit(result)
+    # ------------------------------------------------
+
+    # ---------------- CUSTOM FLAIR BADGE ----------------
+    elif text.startswith(".flair"):
+        args = raw[6:].strip().split(None, 1)
+        if not args:
+            preview_lines = ["🎨 **Flair Styles — Preview**\n"]
+            try:
+                me = await client.get_me()
+                base_name = me.first_name or "You"
+            except Exception:
+                base_name = "You"
+            for key, style in FLAIR_STYLES.items():
+                preview_lines.append(f"`{key}` → {style['template'].format(name=base_name)}")
+            preview_lines.append("\nApply with: `.flair <1/2/3> apply`")
+            preview_lines.append(
+                "\nℹ️ These are decorative personal styles only — they don't "
+                "claim or mimic official Telegram verification."
+            )
+            await event.edit("\n".join(preview_lines))
+            return
+
+        style_key = args[0].strip()
+        apply_now = len(args) > 1 and args[1].strip().lower() == "apply"
+
+        try:
+            me = await client.get_me()
+            base_name = me.first_name or "You"
+        except Exception as e:
+            log_error(".flair", e)
+            await event.edit(f"❌ Couldn't fetch your profile: {e}")
+            return
+
+        preview = _flair_preview(style_key, base_name)
+        if not preview:
+            await event.edit("❌ Unknown style. Use `.flair` to see options `1`, `2`, `3`.")
+            return
+
+        if not apply_now:
+            await event.edit(
+                f"🎨 **Preview:** {preview}\n\nApply with: `.flair {style_key} apply`"
+            )
+            return
+
+        try:
+            await client(functions.account.UpdateProfileRequest(first_name=preview))
+            await event.edit(f"✅ Flair applied: **{preview}**")
+        except Exception as e:
+            log_error(".flair apply", e)
+            await event.edit(f"❌ Failed to update profile: {e}")
+    # ------------------------------------------------
+
+    # ---------------- PASSWORD GENERATOR ----------------
+    elif text.startswith(".genpass"):
+        arg = raw[8:].strip()
+        length = 16
+        if arg:
+            try:
+                length = int(arg)
+            except ValueError:
+                await event.edit("❌ Usage: `.genpass [length]` (default 16, 8–64)")
+                return
+        pwd = _generate_password(length)
+        await event.edit(f"🔑 **Generated Password ({length} chars):**\n`{pwd}`")
+    # ------------------------------------------------
+
+    # ---------------- BASE64 TOOL ----------------
+    elif text.startswith(".b64"):
+        args = raw[4:].strip().split(None, 1)
+        if len(args) < 2 or args[0].lower() not in ("encode", "decode"):
+            await event.edit("❌ Usage: `.b64 encode <text>` or `.b64 decode <text>`")
+            return
+        result = _base64_tool(args[0].lower(), args[1])
+        await event.edit(f"🔠 **Base64 {args[0].capitalize()}:**\n`{result}`")
+    # ------------------------------------------------
+
+    # ---------------- HASH CALCULATOR ----------------
+    elif text.startswith(".hash"):
+        content = raw[5:].strip()
+        if not content:
+            await event.edit("❌ Usage: `.hash <text>`")
+            return
+        hashes = _hash_text(content)
+        lines = ["🧮 **Hashes:**"]
+        for algo, value in hashes.items():
+            lines.append(f"**{algo}:** `{value}`")
+        await event.edit("\n".join(lines))
     # ------------------------------------------------
 
     elif text.startswith(".say"):
