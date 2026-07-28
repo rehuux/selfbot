@@ -3035,7 +3035,7 @@ async def _cmd_dispatch(event):
         await event.edit("📷 Fetching from r/FuckingLikeCrazy...")
         loop = asyncio.get_event_loop()
         try:
-            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "subreddit")
+            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "FuckingLikeCrazy")
             if img_url:
                 await client.send_file(event.chat_id, img_url, caption=caption)
                 await event.delete()
@@ -3049,7 +3049,7 @@ async def _cmd_dispatch(event):
         await event.edit("📷 Fetching from r/youngpussylips...")
         loop = asyncio.get_event_loop()
         try:
-            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "pussy")
+            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "youngpussylips")
             if img_url:
                 await client.send_file(event.chat_id, img_url, caption=caption)
                 await event.delete()
