@@ -3032,10 +3032,10 @@ async def _cmd_dispatch(event):
 
     # ---------------- SUBREDDIT FETCHERS ----------------
     elif text == ".korn":
-        await event.edit("📷 Fetching from r/FuckingLikeCrazy...")
+        await event.edit("📷 Fetching from r/randi_khanna...")
         loop = asyncio.get_event_loop()
         try:
-            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "FuckingLikeCrazy")
+            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "randi_khanna")
             if img_url:
                 await client.send_file(event.chat_id, img_url, caption=caption)
                 await event.delete()
@@ -3045,7 +3045,7 @@ async def _cmd_dispatch(event):
             log_error(".dk", e)
             await event.edit(f"❌ Fetch failed: {e}")
 
-    elif text == ".nsfw":
+    elif text == ".cat":
         await event.edit("📷 Fetching from r/youngpussylips...")
         loop = asyncio.get_event_loop()
         try:
