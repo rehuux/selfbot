@@ -326,7 +326,12 @@ class GhostModeState:
         try:
             with open(GHOST_STATE_FILE, "r") as f:
                 d = json.load(f)
-            self.enabled = bool(d.get("enabled", False))
+            # NOTE: we intentionally do NOT restore `enabled` from disk.
+            # Ghost Mode always starts OFF on a fresh process start, so a
+            # stale/forgotten "on" state from a previous session can never
+            # silently auto-delete every command again. Only the delay
+            # setting is remembered across restarts.
+            self.enabled = False
             self.delete_delay = int(d.get("delete_delay", GHOST_DELETE_DELAY))
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
             pass
@@ -671,8 +676,22 @@ def _random_meme():
 
 
 # ==========================================================================
-# NEW FEATURE: TRIVIA (.trivia)
+# NEW FEATURE: SUBREDDIT FETCHER (.dk -> r/lol, .re -> r/funny)
 # ==========================================================================
+def _random_subreddit_post(subreddit):
+    """Fetch a random image/gif post from a given subreddit via meme-api.com."""
+    try:
+        r = requests.get(f"https://meme-api.com/gimme/{subreddit}", timeout=10)
+        d = r.json()
+        if not d.get("url"):
+            return None, f"❌ Couldn't fetch a post from r/{subreddit} right now."
+        caption = f"📷 **{d.get('title', 'Post')}**\nr/{d.get('subreddit', subreddit)}"
+        return d["url"], caption
+    except Exception as e:
+        return None, f"❌ Fetch from r/{subreddit} failed: {e}"
+
+
+
 def _random_trivia():
     """Fetch a random trivia question (Open Trivia DB, no key needed)."""
     try:
@@ -2029,7 +2048,7 @@ HELP_CATEGORIES = {
     "🛡 Security": [".scan", ".osint", ".secret", ".net", ".ip", ".genpass", ".b64", ".hash"],
     "👤 User & AFK": [".afk", ".back", ".ghost", ".analytics", ".mood", ".flair"],
     "🎉 Fun": [
-        ".meme", ".trivia", ".fact", ".horoscope", ".country", ".anime",
+        ".meme", ".dk", ".re", ".trivia", ".fact", ".horoscope", ".country", ".anime",
         ".quote", ".joke", ".8ball", ".roll", ".flip", ".reverse",
     ],
     "🧩 Moderation": [
@@ -3011,6 +3030,36 @@ async def _cmd_dispatch(event):
             await event.edit(f"❌ Meme fetch failed: {e}")
     # ------------------------------------------------
 
+    # ---------------- SUBREDDIT FETCHERS ----------------
+    elif text == ".korn":
+        await event.edit("📷 Fetching from r/porn...")
+        loop = asyncio.get_event_loop()
+        try:
+            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "porn")
+            if img_url:
+                await client.send_file(event.chat_id, img_url, caption=caption)
+                await event.delete()
+            else:
+                await event.edit(caption)
+        except Exception as e:
+            log_error(".dk", e)
+            await event.edit(f"❌ Fetch failed: {e}")
+
+    elif text == ".nsfw":
+        await event.edit("📷 Fetching from r/youngpussylips...")
+        loop = asyncio.get_event_loop()
+        try:
+            img_url, caption = await loop.run_in_executor(None, _random_subreddit_post, "pussy")
+            if img_url:
+                await client.send_file(event.chat_id, img_url, caption=caption)
+                await event.delete()
+            else:
+                await event.edit(caption)
+        except Exception as e:
+            log_error(".re", e)
+            await event.edit(f"❌ Fetch failed: {e}")
+    # ------------------------------------------------
+
     # ---------------- TRIVIA ----------------
     elif text == ".trivia":
         await event.edit("🧠 Fetching a trivia question...")
@@ -3242,10 +3291,29 @@ async def _cmd_dispatch(event):
         arg = raw[6:].strip().lower()
         if arg == "on":
             ghost_mode.enable()
-            await event.edit("👻 **Ghost Mode Enabled**")
+            try:
+                await client(functions.account.UpdateStatusRequest(offline=True))
+            except Exception as e:
+                log_error(".ghost on (offline status)", e)
+            await event.edit(
+                "👻 **Ghost Mode Enabled**\n"
+                "• Command replies auto-delete\n"
+                "• Online/last-seen status hidden (you'll show offline)"
+            )
         elif arg == "off":
             ghost_mode.disable()
-            await event.edit("👻 **Ghost Mode Disabled**")
+            try:
+                await client(functions.account.UpdateStatusRequest(offline=False))
+            except Exception as e:
+                log_error(".ghost off (online status)", e)
+            await event.edit("👻 **Ghost Mode Disabled** — status back to normal.")
+        elif arg == "":
+            state = "ON 👻" if ghost_mode.enabled else "OFF"
+            await event.edit(
+                f"**Ghost Mode:** {state}\n"
+                f"Auto-delete delay: {ghost_mode.delete_delay}s\n"
+                f"Usage: `.ghost on` or `.ghost off`"
+            )
         else:
             await event.edit("❌ Usage: `.ghost on` or `.ghost off`")
     # ------------------------------------------------
