@@ -678,8 +678,7 @@ def _random_meme():
 # ==========================================================================
 # NEW FEATURE: SUBREDDIT FETCHER (.dk -> r/lol, .re -> r/funny)
 # ==========================================================================
-def _random_subreddit_post(*subreddit):
-    subreddit = random.choice(subreddits)
+def _random_subreddit_post(subreddit):
     """Fetch a random image/gif post from a given subreddit via meme-api.com."""
     try:
         r = requests.get(f"https://meme-api.com/gimme/{subreddit}", timeout=10)
