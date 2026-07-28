@@ -124,6 +124,12 @@ DEV_SKILLS = (
     "Security/OSINT, Linux, and AI Integration"
 )
 DEV_GITHUB = "https://github.com/rehuux"  # update to your actual GitHub if different
+
+# GIFs shown alongside certain command outputs
+COMMANDS_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyMXo1bzFoMmtkb3k4dmxtcDM5dWFmNG9sMHBpanI4MmZlNXJyajBjNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/u2dI2h52gAzNS/giphy.gif"
+DEV_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyd3dzbzJzOHc4OHllYXNwZ2h5cnVjeHZ3Z3pzd2pxeXM3aDY5aG92NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/jpIidKCY487Rbj0TiV/giphy.gif"
+AFK_GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyeDVwa3E1YWt0aHM3OWZzMDFxMzRrNXFxMGs4aHQ2YmpwejR2dmVsYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/HPO8NGybLhXiHKemuT/giphy.gif"
+
 BOT_VERSION = "3.0.0"
 BOT_BUILD = "2026.07"
 BOT_START_TIME = time.time()
@@ -154,7 +160,7 @@ USERNAME_CHECK_SITES = {
 
 # --- Ghost Mode config/state ---
 GHOST_STATE_FILE = "ghost_state.json"
-GHOST_DELETE_DELAY = 5  # seconds — how long a command's result stays visible
+GHOST_DELETE_DELAY = 10  # seconds — how long any message stays visible in Ghost Mode
 
 # --- Secret Notes config (AES-256-GCM, local file only) ---
 SECRET_NOTES_FILE = "secret_notes.enc"
@@ -2193,6 +2199,21 @@ HELP_DETAILS = {
 }
 
 
+async def _send_gif_with_text(event, gif_url, text):
+    """Sends a GIF; if `text` fits Telegram's 1024-char caption limit it goes
+    as the caption, otherwise the GIF is sent first and the full text follows
+    as a normal message right after it."""
+    try:
+        await event.delete()
+    except Exception:
+        pass
+    if len(text) <= 1024:
+        await client.send_file(event.chat_id, gif_url, caption=text)
+    else:
+        await client.send_file(event.chat_id, gif_url)
+        await client.send_message(event.chat_id, text)
+
+
 def _build_help_overview():
     """Builds the premium boxed-UI overview for .help / .commands."""
     uptime_sec = int(time.time() - BOT_START_TIME)
@@ -2330,14 +2351,14 @@ async def _cmd_dispatch(event):
         await event.edit(f"**🧾 Last errors:**\n```\n{tail[-3500:]}\n```")
 
     elif text in (".help", ".fux", ".commands"):
-        await event.edit(_build_help_overview())
+        await _send_gif_with_text(event, COMMANDS_GIF_URL, _build_help_overview())
 
     elif text.startswith(".help "):
         cmd_query = raw[6:].strip()
         await event.edit(_build_help_detail(cmd_query))
 
     elif text == ".dev":
-        await event.edit(_build_dev_info())
+        await _send_gif_with_text(event, DEV_GIF_URL, _build_dev_info())
 
     elif text == ".owner":
         lines = [
@@ -3297,7 +3318,7 @@ async def _cmd_dispatch(event):
                 log_error(".ghost on (offline status)", e)
             await event.edit(
                 "👻 **Ghost Mode Enabled**\n"
-                "• Command replies auto-delete\n"
+                f"• Every message you send (text/photo/video/gif) auto-deletes after {ghost_mode.delete_delay}s\n"
                 "• Online/last-seen status hidden (you'll show offline)"
             )
         elif arg == "off":
@@ -3671,6 +3692,17 @@ async def cmd_handler(event):
             pass
 
     if not raw_text.startswith("."):
+        # Ghost Mode: auto-delete every normal outgoing message (text,
+        # photo, video, gif, sticker, voice note, etc.) after the delay —
+        # not just command output.
+        if ghost_mode.enabled:
+            async def _ghost_cleanup_plain():
+                await asyncio.sleep(ghost_mode.delete_delay)
+                try:
+                    await event.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_ghost_cleanup_plain())
         return
 
     try:
@@ -3732,10 +3764,13 @@ async def incoming_handler(event):
         if afk.should_reply(sender_id):
             afk.mark_replied(sender_id)
             duration = afk.duration_text()
+            afk_text = f"{afk.message}\n\n_I have been away for {duration}._"
             try:
-                await event.respond(
-                    f"{afk.message}\n\n_I have been away for {duration}._"
-                )
+                if len(afk_text) <= 1024:
+                    await client.send_file(event.chat_id, AFK_GIF_URL, caption=afk_text)
+                else:
+                    await client.send_file(event.chat_id, AFK_GIF_URL)
+                    await event.respond(afk_text)
             except Exception as e:
                 log_error("afk_auto_reply", e)
 
