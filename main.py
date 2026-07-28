@@ -128,7 +128,7 @@ DEV_GITHUB = "https://github.com/rehuux"  # update to your actual GitHub if diff
 # GIFs shown alongside certain command outputs
 COMMANDS_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyMXo1bzFoMmtkb3k4dmxtcDM5dWFmNG9sMHBpanI4MmZlNXJyajBjNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/u2dI2h52gAzNS/giphy.gif"
 DEV_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyd3dzbzJzOHc4OHllYXNwZ2h5cnVjeHZ3Z3pzd2pxeXM3aDY5aG92NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/jpIidKCY487Rbj0TiV/giphy.gif"
-AFK_GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyeDVwa3E1YWt0aHM3OWZzMDFxMzRrNXFxMGs4aHQ2YmpwejR2dmVsYyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/HPO8NGybLhXiHKemuT/giphy.gif"
+AFK_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUydDhyZ3dwdmptam8ybTVxMTZvbmRxeXRwbnltczBjdTU5aHZ6bG5pYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/8bxgTkgQqjQBEobJlW/giphy.gif"
 
 BOT_VERSION = "3.0.0"
 BOT_BUILD = "2026.07"
