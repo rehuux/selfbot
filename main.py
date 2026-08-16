@@ -228,9 +228,9 @@ else:
 # ------------------------------------------------------------------
 AFK_RETRIGGER_SECONDS = 6 * 3600
 DEFAULT_AFK_MESSAGE = (
-    "Hello! I am currently **AFK (Away From Keyboard)**.\n"
+    "Hello Buddy,\n"
     "I will be with you shortly (approximately 5–20 minutes).\n"
-    "Please leave your message or reason for contacting me."
+    "To help me assist you efficiently, please describe what you are interested in or what services you require."
 )
 
 class AFKState:
