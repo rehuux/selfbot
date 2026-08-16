@@ -138,8 +138,8 @@ DEV_GITHUB = "https://github.com/rehuux"
 DEV_SKILLS = "CyberSecurity, Telegram Bot Development, Security/OSINT, Linux, and AI Integration"
 
 # Media Assets
-COMMANDS_GIF_URL = "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyZThjYTgwYXNjZ28weG9pY2ZnbG13dTNiMGhpNHo0Z3E1b3ZodncxdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/uZVCv8HVKg4n83Xsb7/giphy.gif"
-DEV_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyYTZnejY3OXc5dmI0czNwazRyY2t6ZmluYzB0d2J6YzkxOTEzODQzNiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Yq1tXTNe5PDdQEhKXG/giphy.gif"
+COMMANDS_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyMXo1bzFoMmtkb3k4dmxtcDM5dWFmNG9sMHBpanI4MmZlNXJyajBjNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/u2dI2h52gAzNS/giphy.gif"
+DEV_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyd3dzbzJzOHc4OHllYXNwZ2h5cnVjeHZ3Z3pzd2pxeXM3aDY5aG92NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/jpIidKCY487Rbj0TiV/giphy.gif"
 AFK_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUydDhyZ3dwdmptam8ybTVxMTZvbmRxeXRwbnltczBjdTU5aHZ6bG5pYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/8bxgTkgQqjQBEobJlW/giphy.gif"
 
 BOT_VERSION = "4.5.0"
@@ -228,9 +228,9 @@ else:
 # ------------------------------------------------------------------
 AFK_RETRIGGER_SECONDS = 6 * 3600
 DEFAULT_AFK_MESSAGE = (
-    "Hello Buddy, I will be with you shortly\n"
-    "(approximately 5–20 minutes). To help me\n"
-    "assist you efficiently, please describe what you are interested in or what services you require."
+    "Hello! I am currently **AFK (Away From Keyboard)**.\n"
+    "I will be with you shortly (approximately 5–20 minutes).\n"
+    "Please leave your message or reason for contacting me."
 )
 
 class AFKState:
@@ -1459,51 +1459,283 @@ FLAIR_STYLES = {
 FLAIR_DISCLAIMER = "⚠️ _Decorative personal flair — not an official Telegram verification badge._"
 
 # ------------------------------------------------------------------
-# Help & Developer Matrix (150+ Commands)
+# Advanced Utility & Transform Helpers
+# ------------------------------------------------------------------
+def _vaporwave_text(text: str) -> str:
+    out = []
+    for c in text:
+        code = ord(c)
+        if 0x21 <= code <= 0x7E:
+            out.append(chr(code + 0xFEE0))
+        elif code == 0x20:
+            out.append("　")
+        else:
+            out.append(c)
+    return "".join(out)
+
+def _superscript_text(text: str) -> str:
+    sup_map = str.maketrans(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-=()",
+        "ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖᑫʳˢᵗᵘᵛʷˣʸᶻᴬᴮᶜᴰᴱᶠᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᑫᴿˢᵀᵁⱽᵂˣʸᶻ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾"
+    )
+    return text.translate(sup_map)
+
+def _subscript_text(text: str) -> str:
+    sub_map = str.maketrans(
+        "aehijklmnoprstuvx0123456789+-=()",
+        "ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎"
+    )
+    return text.translate(sub_map)
+
+def _mirror_text(text: str) -> str:
+    mirror_map = {'a': 'ɒ', 'b': 'd', 'c': 'ɔ', 'd': 'b', 'e': 'ɘ', 'f': 'Ꮈ', 'g': 'ǫ', 'h': 'ʜ', 'i': 'i', 'j': 'į', 'k': 'ʞ', 'l': 'l', 'm': 'm', 'n': 'n', 'o': 'o', 'p': 'q', 'q': 'p', 'r': 'ɿ', 's': 'ƨ', 't': 'ƚ', 'u': 'u', 'v': 'v', 'w': 'w', 'x': 'x', 'y': 'ʏ', 'z': 'z', 'A': 'A', 'B': 'ᙠ', 'C': 'Ɔ', 'D': 'ᗡ', 'E': 'Ǝ', 'F': 'ᖷ', 'G': 'Ꭾ', 'H': 'H', 'I': 'I', 'J': 'ᒐ', 'K': 'ʞ', 'L': '⅃', 'M': 'M', 'N': 'И', 'O': 'O', 'P': 'ꟼ', 'Q': 'Ọ', 'R': 'Я', 'S': 'Ƨ', 'T': 'T', 'U': 'U', 'V': 'V', 'W': 'W', 'X': 'X', 'Y': 'Y', 'Z': 'Z'}
+    return "".join(mirror_map.get(c, c) for c in reversed(text))
+
+def _http_status_lookup(code: str) -> str:
+    codes = {
+        "100": ("Continue", "Client should continue with request."),
+        "101": ("Switching Protocols", "Requester asked server to switch protocols."),
+        "200": ("OK", "Standard response for successful HTTP requests."),
+        "201": ("Created", "Request fulfilled, resulting in new resource."),
+        "204": ("No Content", "Server processed request successfully, returning no content."),
+        "301": ("Moved Permanently", "Resource moved permanently to new URI."),
+        "302": ("Found", "Resource temporarily at different URI."),
+        "304": ("Not Modified", "Resource has not been modified since last requested."),
+        "400": ("Bad Request", "Server cannot process request due to client error."),
+        "401": ("Unauthorized", "Authentication is required and has failed or not been provided."),
+        "403": ("Forbidden", "Server understood request but refuses to authorize it."),
+        "404": ("Not Found", "Requested resource could not be found."),
+        "405": ("Method Not Allowed", "Request method is not supported for requested resource."),
+        "418": ("I'm a teapot", "RFC 2324 hyper text coffee pot control protocol joke status."),
+        "429": ("Too Many Requests", "User has sent too many requests in given amount of time (rate limited)."),
+        "500": ("Internal Server Error", "Generic server error message when condition was encountered."),
+        "502": ("Bad Gateway", "Server received invalid response from upstream server."),
+        "503": ("Service Unavailable", "Server cannot handle request (overloaded or down for maintenance)."),
+        "504": ("Gateway Timeout", "Server did not receive timely response from upstream server."),
+    }
+    if code in codes:
+        title, desc = codes[code]
+        return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 **HTTP Status Code — `{code}`**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Status:** `{title}`
+✓ **Details:** {desc}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    return f"ℹ️ HTTP Status `{code}`: Code not in quick lookup database."
+
+def _jwt_decode_payload(token: str) -> str:
+    try:
+        parts = token.strip().split(".")
+        if len(parts) < 2:
+            return "❌ Invalid JWT token format (expected header.payload.signature)."
+        payload_b64 = parts[1]
+        rem = len(payload_b64) % 4
+        if rem > 0:
+            payload_b64 += "=" * (4 - rem)
+        decoded = base64.urlsafe_b64decode(payload_b64).decode("utf-8")
+        parsed = json.loads(decoded)
+        return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔓 **Decoded JWT Payload**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+```json
+{json.dumps(parsed, indent=2)}
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        return f"❌ Failed to decode JWT: {e}"
+
+def _subdomains_lookup(domain: str) -> str:
+    domain = domain.strip().replace("https://", "").replace("http://", "").split("/")[0]
+    try:
+        r = requests.get(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=12)
+        if r.status_code == 200:
+            entries = r.json()
+            subs = set()
+            for item in entries[:80]:
+                name = item.get("name_value", "")
+                for sub in name.split("\n"):
+                    if sub and not sub.startswith("*") and domain in sub:
+                        subs.add(sub.strip().lower())
+            if subs:
+                lines = [f"• `{s}`" for s in sorted(list(subs))[:25]]
+                return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 **Subdomains for `{domain}` ({len(subs)} found)**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+{chr(10).join(lines)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        log_error("subdomains", e)
+    return f"❌ Could not enumerate subdomains for `{domain}`."
+
+def _word_count_stats(text: str) -> str:
+    words = text.split()
+    chars = len(text)
+    chars_no_spaces = len(text.replace(" ", "").replace("\n", ""))
+    lines = text.splitlines()
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s for s in sentences if s.strip()]
+    read_time_sec = max(1, int(len(words) / 3.3))
+    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 **Text Statistics**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Words:** `{len(words):,}`
+✓ **Characters:** `{chars:,}` (No spaces: `{chars_no_spaces:,}`)
+✓ **Lines:** `{len(lines):,}`
+✓ **Sentences:** `{len(sentences):,}`
+✓ **Est. Read Time:** `~{read_time_sec}s`
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+def _cve_lookup(cve_id: str) -> str:
+    cve_id = cve_id.strip().upper()
+    if not cve_id.startswith("CVE-"):
+        cve_id = "CVE-" + cve_id
+    try:
+        r = requests.get(f"https://cve.circl.lu/api/cve/{cve_id}", timeout=10)
+        if r.status_code == 200 and r.json():
+            data = r.json()
+            summary = data.get("summary", "No summary available.")[:350]
+            cvss = data.get("cvss", "N/A")
+            published = data.get("Published", "N/A")
+            return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡 **Vulnerability Info — `{cve_id}`**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **CVSS Score:** `{cvss} / 10`
+✓ **Published:** `{published}`
+✓ **Summary:**
+_{summary}_
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        log_error("cve", e)
+    return f"❌ CVE lookup failed for `{cve_id}`."
+
+def _crypto_quick_quote(coin: str) -> str:
+    coin_map = {
+        "btc": "bitcoin",
+        "eth": "ethereum",
+        "sol": "solana",
+        "bnb": "binancecoin",
+        "xrp": "ripple",
+        "doge": "dogecoin",
+        "ton": "the-open-network"
+    }
+    cid = coin_map.get(coin.lower(), coin.lower())
+    try:
+        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={cid}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true", timeout=8)
+        if r.status_code == 200 and cid in r.json():
+            d = r.json()[cid]
+            p = d.get("usd", 0)
+            chg = d.get("usd_24h_change", 0)
+            vol = d.get("usd_24h_vol", 0)
+            arrow = "📈" if chg >= 0 else "📉"
+            return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 **{cid.upper()} Live Market Quote**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Price:** `${p:,.2f}`
+✓ **24h Change:** {arrow} `{chg:+.2f}%`
+✓ **24h Volume:** `${vol:,.0f}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        log_error("quick_crypto", e)
+    return f"❌ Could not fetch quick price for `{coin}`."
+
+BORED_ACTIVITIES = [
+    "Learn a new keyboard shortcut in your IDE or OS.",
+    "Inspect the SSL certificate chain of your favorite website.",
+    "Write a bash alias for your most frequently used terminal commands.",
+    "Practice OSINT techniques on a public domain.",
+    "Read the documentation for Telethon or Python asyncio internals.",
+    "Solve a quick challenge on HackTheBox or LeetCode.",
+    "Configure a custom firewall or WireGuard VPN profile.",
+    "Backup your important configuration files and session strings.",
+    "Explore cryptocurrency mempools or recent whale transactions.",
+    "Organize your Telegram folders and pin your top channels."
+]
+
+TRUTH_PROMPTS = [
+    "What is the most embarrassing message you ever sent to the wrong chat?",
+    "What is one secret you have never told anyone on Telegram?",
+    "What is the biggest tech mistake you ever made in production?",
+    "If you could delete one social media platform forever, which one would it be?",
+    "What is your biggest fear when it comes to cyber security?",
+    "Who was your first crush?",
+    "Have you ever lied about why you went AFK?"
+]
+
+DARE_PROMPTS = [
+    "Change your Telegram bio to 'Controlled by AI' for 1 hour.",
+    "Send a voice note singing the chorus of your favorite song.",
+    "Post a random meme in the group with zero explanation.",
+    "Change your profile photo to a funny cat image for 30 minutes.",
+    "Send a compliment to the 3rd person in your recent chat list.",
+    "Type your next 5 messages using only emojis."
+]
+
+INSULTS_TECH = [
+    "Your code has more bugs than an abandoned picnic.",
+    "You are the human equivalent of a dial-up connection in a 5G world.",
+    "Even ChatGPT asks for a second opinion when talking to you.",
+    "Your logic has more syntax errors than an unclosed bracket in C.",
+    "You're like a floppy disk in 2026: outdated and only capable of holding 1.44 MB of thought."
+]
+
+# ------------------------------------------------------------------
+# Help & Developer Matrix (200+ Commands)
 # ------------------------------------------------------------------
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
-        ".info", ".tinfo", ".chatinfo", ".id", ".unread", ".ocr", ".repo", ".time",
-        ".admins", ".bots", ".members", ".zombies", ".dc", ".common", ".link",
-        ".pin", ".unpin", ".unpinall", ".title", ".setdesc", ".slow", ".lock", ".unlock"
+        ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
+        ".repo", ".time", ".worldtime", ".admins", ".bots", ".members", ".zombies",
+        ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned", ".title",
+        ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
     "🛡 Security & OSINT": [
-        ".scan", ".osint", ".ip", ".bin", ".whois", ".dns", ".secret", ".net",
-        ".genpass", ".b64", ".hash", ".hex", ".binary", ".rot13", ".morse",
-        ".ssl", ".headers", ".unshort"
+        ".scan", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
+        ".net", ".genpass", ".b64", ".hash", ".hex", ".binary", ".rot13", ".morse",
+        ".ssl", ".headers", ".unshort", ".subdomains", ".httpstatus", ".urlencode",
+        ".urldecode", ".uuid", ".jwt", ".cve"
     ],
     "🛠 Productivity": [
-        ".paste", ".tts", ".remind", ".unit", ".json", ".note", ".calc", ".weather",
-        ".tr", ".qr", ".scanqr", ".crypto", ".define", ".github", ".short",
-        ".schedule", ".portfolio", ".currency", ".wiki", ".timer", ".todo"
+        ".paste", ".tts", ".voice", ".remind", ".unit", ".convert", ".json", ".note",
+        ".notes", ".calc", ".weather", ".tr", ".translate", ".qr", ".scanqr",
+        ".crypto", ".define", ".github", ".short", ".schedule", ".portfolio",
+        ".currency", ".wiki", ".timer", ".todo", ".wordcount", ".epoch", ".age",
+        ".daysuntil", ".randnum", ".pick", ".color", ".lorem"
     ],
     "👤 User & Stealth": [
-        ".afk", ".back", ".unafk", ".ghost", ".analytics", ".mood", ".flair", ".speed",
-        ".clearcache", ".setname", ".setbio", ".setpfp", ".delpfp", ".block", ".unblock"
+        ".afk", ".back", ".unafk", ".status", ".me", ".myusername", ".ghost",
+        ".analytics", ".mood", ".flair", ".speed", ".clearcache", ".setname",
+        ".setbio", ".setpfp", ".delpfp", ".block", ".unblock"
     ],
     "🧩 Moderation": [
         ".mute", ".unmute", ".unmuteall", ".ban", ".unban", ".unbanall", ".kick",
         ".admin", ".demote", ".tban", ".tmute", ".del", ".purge", ".purgeme",
-        ".delall", ".warn", ".warns", ".resetwarns", ".clean", ".close"
+        ".delall", ".delmsgs", ".warn", ".warns", ".resetwarns", ".clean",
+        ".close", ".softban"
     ],
     "📡 Broadcast": [
-        ".dm", ".frwd", ".gc", ".broad", ".frwdall", ".spm", ".mm", ".tag",
-        ".say", ".count", ".dmfrwd", ".echo", ".broadcastgc", ".massdm", ".poll"
+        ".dm", ".frwd", ".gc", ".broad", ".frwdall", ".spm", ".spam", ".mm",
+        ".tag", ".say", ".count", ".dmfrwd", ".echo", ".broadcastgc", ".massdm",
+        ".poll", ".type", ".upload", ".recordaudio"
     ],
     "🎨 Text & Fonts": [
         ".font", ".shout", ".mock", ".leet", ".spoiler", ".zalgo", ".strike",
-        ".bubble", ".gothic", ".bold", ".italic", ".mono", ".square", ".smallcaps", ".cursive", ".flip"
+        ".bubble", ".gothic", ".bold", ".italic", ".mono", ".square", ".smallcaps",
+        ".cursive", ".flip", ".upper", ".lower", ".titlecase", ".vaporwave",
+        ".superscript", ".subscript", ".mirror"
     ],
     "🎉 Fun & Games": [
         ".react", ".meme", ".korn", ".cat", ".dog", ".trivia", ".fact", ".horoscope",
         ".country", ".anime", ".quote", ".joke", ".8ball", ".roll", ".flip",
-        ".reverse", ".slap", ".roast", ".compliment", ".dice"
+        ".reverse", ".slap", ".roast", ".compliment", ".dice", ".bored", ".insult",
+        ".rps", ".truth", ".dare", ".hypnotize", ".hack"
     ],
     "💰 Crypto & Markets": [
-        ".whale", ".gas", ".feargreed", ".marketcap", ".fiat", ".stock", ".portfolio", ".crypto"
+        ".whale", ".gas", ".feargreed", ".fng", ".marketcap", ".fiat", ".stock",
+        ".portfolio", ".crypto", ".btc", ".eth", ".sol", ".convertcrypto", ".rates"
     ],
     "⚙️ System": [
-        ".fix", ".fixlog", ".ping", ".alive", ".uptime", ".sysinfo", ".dev", ".owner", ".autoaccept", ".restart"
+        ".fix", ".fixlog", ".ping", ".alive", ".uptime", ".sysinfo", ".dev",
+        ".owner", ".autoaccept", ".restart", ".version", ".logs"
     ],
 }
 
@@ -1587,44 +1819,50 @@ async def _cmd_dispatch(event):
     global muted_users, banned_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
 
     raw = event.raw_text.strip()
-    text = raw.lower()
-    if not text.startswith("."):
+    if not raw.startswith("."):
         return
 
+    tokens = raw.split()
+    if not tokens:
+        return
+    cmd = tokens[0].lower()
+    args = tokens[1:]
+    args_str = raw[len(tokens[0]):].strip()
+
     # System & Dev
-    if text == ".ping":
+    if cmd == ".ping":
         start = time.time()
         msg = await event.edit("🏓 Pinging...")
         latency_ms = int((time.time() - start) * 1000)
         await msg.edit(f"🏓 **Pong!** `{latency_ms}ms`")
 
-    elif text in (".alive", ".uptime"):
+    elif cmd in (".alive", ".uptime"):
         uptime_sec = int(time.time() - BOT_START_TIME)
         h, rem = divmod(uptime_sec, 3600)
         m, s = divmod(rem, 60)
         await event.edit(f"🟢 **Rehu SelfBot is Online!**\n✓ **Version:** `{BOT_VERSION}`\n✓ **Uptime:** `{h}h {m}m {s}s`\n✓ **Dev:** {DEV_NAME}")
 
-    elif text in (".help", ".fux", ".commands"):
-        await _send_gif_with_text(event, COMMANDS_GIF_URL, _build_help_overview())
-
-    elif text.startswith(".help "):
-        arg = raw[6:].strip().lower()
-        if arg in ("all", "full"):
-            lines = ["⚡ **REHU SELFBOT V4 — ALL COMMANDS**\n"]
-            for cat, cmds in HELP_CATEGORIES.items():
-                lines.append(f"**{cat}**\n" + "  ".join(f"`{c}`" for c in cmds) + "\n")
-            full_text = "\n".join(lines)
-            await _send_gif_with_text(event, COMMANDS_GIF_URL, full_text)
-        elif arg.isdigit() or any(arg in k.lower() for k in HELP_CATEGORIES):
-            cat_text = _build_help_overview(arg)
-            await _send_gif_with_text(event, COMMANDS_GIF_URL, cat_text)
+    elif cmd in (".help", ".fux", ".commands"):
+        if args:
+            arg = args[0].lower()
+            if arg in ("all", "full"):
+                lines = ["⚡ **REHU SELFBOT V4 — ALL COMMANDS**\n"]
+                for cat, c_list in HELP_CATEGORIES.items():
+                    lines.append(f"**{cat}**\n" + "  ".join(f"`{c}`" for c in c_list) + "\n")
+                full_text = "\n".join(lines)
+                await _send_gif_with_text(event, COMMANDS_GIF_URL, full_text)
+            elif arg.isdigit() or any(arg in k.lower() for k in HELP_CATEGORIES):
+                cat_text = _build_help_overview(arg)
+                await _send_gif_with_text(event, COMMANDS_GIF_URL, cat_text)
+            else:
+                await event.edit(f"📖 **Command:** `.{arg}`\nRun `.{arg}` with parameters or reply to target message.")
         else:
-            await event.edit(f"📖 **Command:** `.{arg}`\nRun `.{arg}` with parameters or reply to target message.")
+            await _send_gif_with_text(event, COMMANDS_GIF_URL, _build_help_overview())
 
-    elif text == ".dev":
+    elif cmd == ".dev":
         await _send_gif_with_text(event, DEV_GIF_URL, _build_dev_info())
 
-    elif text == ".owner":
+    elif cmd == ".owner":
         lines = [
             "**Owner Intro**",
             f"• Developer: {DEV_NAME}",
@@ -1638,12 +1876,12 @@ async def _cmd_dispatch(event):
             await msg.edit(out)
             await asyncio.sleep(0.6)
 
-    elif text == ".fix":
+    elif cmd == ".fix":
         auto_fix_active = not auto_fix_active
         state = "ON ✅" if auto_fix_active else "OFF 🔕"
         await event.edit(f"**🛠 Auto-fix mode: {state}**")
 
-    elif text == ".fixlog":
+    elif cmd == ".fixlog":
         try:
             with open(ERROR_LOG_FILE, "r", encoding="utf-8") as f:
                 tail = "".join(f.readlines()[-30:]) or "No errors logged yet."
@@ -1651,17 +1889,28 @@ async def _cmd_dispatch(event):
             tail = "No errors logged yet."
         await event.edit(f"**🧾 Recent Errors:**\n```\n{tail[-3500:]}\n```")
 
-    elif text == ".autoaccept":
+    elif cmd == ".autoaccept":
         auto_accept_active = not auto_accept_active
         await event.edit(f"Auto-accept chat requests: `{'Enabled' if auto_accept_active else 'Disabled'}`")
 
+    elif cmd in (".version", ".ver"):
+        await event.edit(f"⚡ **Rehu SelfBot** `v{BOT_VERSION}` (`{BOT_BUILD}`)\n✓ Platform: `{platform.system()} {platform.machine()}`\n✓ Python: `{platform.python_version()}`\n✓ Total Commands: `{sum(len(v) for v in HELP_CATEGORIES.values())}+`")
+
+    elif cmd == ".logs":
+        try:
+            with open(ERROR_LOG_FILE, "r", encoding="utf-8") as f:
+                tail = "".join(f.readlines()[-15:]) or "No logs available."
+        except Exception:
+            tail = "No logs available."
+        await event.edit(f"📄 **Recent Logs:**\n```\n{tail[-3000:]}\n```")
+
     # AFK
-    elif text == ".afk" or text.startswith(".afk "):
-        custom = raw[4:].strip() or None
+    elif cmd == ".afk":
+        custom = args_str or None
         afk.enable(custom)
         await event.edit(f"🌙 **AFK Mode Enabled**\nMessage: `{afk.message}`")
 
-    elif text == ".back":
+    elif cmd in (".back", ".unafk"):
         if afk.active:
             dur = afk.duration_text()
             afk.disable()
@@ -1669,40 +1918,69 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("ℹ️ AFK was not active.")
 
+    elif cmd == ".status":
+        afk_st = "🌙 Active" if afk.active else "🟢 Offline (Inactive)"
+        ghost_st = "👻 Enabled" if ghost_mode.enabled else "Disabled"
+        fix_st = "✅ Enabled" if auto_fix_active else "Disabled"
+        await event.edit(f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️ **BOT STATUS OVERVIEW**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **AFK Status:** {afk_st}
+✓ **Ghost Mode:** {ghost_st}
+✓ **Auto-Fix:** {fix_st}
+✓ **Auto-Accept:** `{'Enabled' if auto_accept_active else 'Disabled'}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━""")
+
+    elif cmd == ".me":
+        me = await client.get_me()
+        await event.edit(f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 **MY IDENTITY**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Name:** `{me.first_name or ''} {me.last_name or ''}`.strip()
+✓ **Username:** @{me.username or 'N/A'}
+✓ **ID:** `{me.id}`
+✓ **Phone:** `{me.phone or 'Hidden'}`
+✓ **Premium:** `{'Yes' if getattr(me, 'premium', False) else 'No'}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━""")
+
+    elif cmd == ".myusername":
+        me = await client.get_me()
+        await event.edit(f"👤 **Your Username:** @{me.username or 'No username set'}")
+
     # Notes
-    elif text.startswith(".note"):
-        parts = raw[5:].strip().split(None, 2)
-        if not parts:
-            await event.edit("❌ Usage: `.note add <title> <text>` | `.note list` | `.note view <title>` | `.note del <title>`")
-            return
-        act = parts[0].lower()
-        if act == "list":
+    elif cmd in (".note", ".notes"):
+        if not args or args[0].lower() == "list":
             if not notes_db:
                 await event.edit("📝 No notes stored.")
             else:
                 lines = [f"• **{t}**: `{c[:30]}...`" for t, c in notes_db.items()]
                 await event.edit("📝 **Saved Notes:**\n\n" + "\n".join(lines))
-        elif act == "add" and len(parts) >= 3:
-            notes_db[parts[1]] = parts[2]
+        elif args[0].lower() == "add" and len(args) >= 3:
+            title = args[1]
+            content = " ".join(args[2:])
+            notes_db[title] = content
             save_json(NOTES_FILE, notes_db)
-            await event.edit(f"✅ Saved note `{parts[1]}`.")
-        elif act == "view" and len(parts) >= 2:
-            if parts[1] in notes_db:
-                await event.edit(f"📝 **Note: {parts[1]}**\n\n{notes_db[parts[1]]}")
+            await event.edit(f"✅ Saved note `{title}`.")
+        elif args[0].lower() == "view" and len(args) >= 2:
+            title = args[1]
+            if title in notes_db:
+                await event.edit(f"📝 **Note: {title}**\n\n{notes_db[title]}")
             else:
                 await event.edit("❌ Note not found.")
-        elif act == "del" and len(parts) >= 2:
-            if parts[1] in notes_db:
-                del notes_db[parts[1]]
+        elif args[0].lower() in ("del", "delete") and len(args) >= 2:
+            title = args[1]
+            if title in notes_db:
+                del notes_db[title]
                 save_json(NOTES_FILE, notes_db)
-                await event.edit(f"✅ Deleted note `{parts[1]}`.")
+                await event.edit(f"✅ Deleted note `{title}`.")
             else:
                 await event.edit("❌ Note not found.")
+        else:
+            await event.edit("❌ Usage: `.note add <title> <text>` | `.note list` | `.note view <title>` | `.note del <title>`")
 
     # Spam
-    elif text.startswith(".spm") or text.startswith(".spam"):
-        cmd_len = 4 if text.startswith(".spm") else 5
-        parts = raw[cmd_len:].strip().rsplit(None, 1)
+    elif cmd in (".spm", ".spam"):
+        parts = args_str.rsplit(None, 1)
         if len(parts) < 2 or not parts[1].isdigit():
             await event.edit("❌ Usage: `.spm <text> <count>` e.g. `.spm hello 5`")
             return
@@ -1718,9 +1996,8 @@ async def _cmd_dispatch(event):
                 await asyncio.sleep(random.uniform(1, 2))
 
     # Telegram Profile Info
-    elif text.startswith(".tinfo") or text.startswith(".info"):
-        cmd_len = 5 if text.startswith(".info") else 7
-        target = raw[cmd_len:].strip() if len(raw) > cmd_len else None
+    elif cmd in (".tinfo", ".info", ".userinfo"):
+        target = args_str if args_str else None
         try:
             if target:
                 uf = await client(GetFullUserRequest(target))
@@ -1749,14 +2026,18 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Error: {e}")
 
-    elif text == ".id":
+    elif cmd == ".myid":
+        me = await client.get_me()
+        await event.edit(f"🆔 **Your User ID:** `{me.id}`\n💬 **Chat ID:** `{event.chat_id}`")
+
+    elif cmd == ".id":
         if event.is_reply:
             reply = await event.get_reply_message()
             await event.edit(f"🆔 **User ID:** `{reply.sender_id}`")
         else:
             await event.edit(f"🆔 **Chat ID:** `{event.chat_id}`")
 
-    elif text.startswith(".chatinfo"):
+    elif cmd == ".chatinfo":
         try:
             chat = await event.get_chat()
             if hasattr(chat, "title"):
@@ -1777,39 +2058,38 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ {e}")
 
-    elif text.startswith(".insta") or text.startswith(".iginfo"):
-        parts = raw.split(None, 1)
-        if len(parts) < 2:
+    elif cmd in (".insta", ".iginfo"):
+        if not args_str:
             await event.edit("❌ Usage: `.insta @username`")
             return
-        await event.edit(f"🔍 Fetching @{parts[1].strip().lstrip('@')}...")
+        await event.edit(f"🔍 Fetching @{args_str.lstrip('@')}...")
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _ig_info, parts[1].strip())
+        res = await loop.run_in_executor(None, _ig_info, args_str)
         await event.edit(res)
 
     # Moderation
-    elif (text.startswith(".mute") and not text.startswith(".unmute")) or (text.startswith(".ban") and not text.startswith(".unban")):
+    elif cmd in (".mute", ".ban"):
         u = None
         if event.is_reply:
             reply = await event.get_reply_message()
             u = await client.get_entity(reply.sender_id)
-        elif len(raw.split()) > 1:
-            u = await get_entity(raw.split(None, 1)[1].strip())
+        elif args_str:
+            u = await get_entity(args_str)
         if u:
             muted_users.add(u.id)
             banned_users.add(u.id)
             save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
-            await event.edit(f"🚫 Blocked `{u.first_name or u.id}` — messages will be deleted.")
+            await event.edit(f"🚫 Blocked `{u.first_name or u.id}` in SelfBot memory.")
         else:
             await event.edit("❌ User not found.")
 
-    elif text.startswith(".unmute") or text.startswith(".unban"):
+    elif cmd in (".unmute", ".unban"):
         u = None
         if event.is_reply:
             reply = await event.get_reply_message()
             u = await client.get_entity(reply.sender_id)
-        elif len(raw.split()) > 1:
-            u = await get_entity(raw.split(None, 1)[1].strip())
+        elif args_str:
+            u = await get_entity(args_str)
         if u:
             muted_users.discard(u.id)
             banned_users.discard(u.id)
@@ -1818,19 +2098,19 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("❌ User not found.")
 
-    elif text.startswith(".block") and not text.startswith(".unblock"):
-        target_id = event.chat_id if event.is_private else ((await get_entity(raw.split(None, 1)[1].strip())).id if len(raw.split()) > 1 else None)
+    elif cmd == ".block":
+        target_id = event.chat_id if event.is_private else ((await get_entity(args_str)).id if args_str else None)
         if target_id:
             await client(functions.contacts.BlockRequest(id=target_id))
             await event.edit(f"🚫 Blocked `{target_id}`")
 
-    elif text.startswith(".unblock"):
-        target_id = event.chat_id if event.is_private else ((await get_entity(raw.split(None, 1)[1].strip())).id if len(raw.split()) > 1 else None)
+    elif cmd == ".unblock":
+        target_id = event.chat_id if event.is_private else ((await get_entity(args_str)).id if args_str else None)
         if target_id:
             await client(functions.contacts.UnblockRequest(id=target_id))
             await event.edit(f"✅ Unblocked `{target_id}`")
 
-    elif text.startswith(".kick"):
+    elif cmd == ".kick":
         if not event.is_group or not event.is_reply:
             await event.edit("❌ Reply to a user in a group.")
             return
@@ -1838,29 +2118,77 @@ async def _cmd_dispatch(event):
         await client.kick_participant(event.chat_id, reply.sender_id)
         await event.edit(f"🦵 Kicked user `{reply.sender_id}`")
 
-    elif text.startswith(".admin"):
+    elif cmd == ".admin":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        target = (await event.get_reply_message()).sender_id if event.is_reply else ((await get_entity(raw.split(None, 1)[1].strip())).id if len(raw.split()) > 1 else None)
+        target = (await event.get_reply_message()).sender_id if event.is_reply else ((await get_entity(args_str)).id if args_str else None)
         if target:
             rights = types.ChatAdminRights(change_info=True, post_messages=True, edit_messages=True, delete_messages=True, ban_users=True, invite_users=True, pin_messages=True, add_admins=False, manage_call=True, other=True)
             await client(EditAdminRequest(event.chat_id, target, rights, "admin"))
             await event.edit(f"⭐ Promoted `{target}` to admin.")
 
-    elif text.startswith(".demote"):
+    elif cmd == ".demote":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        target = (await event.get_reply_message()).sender_id if event.is_reply else ((await get_entity(raw.split(None, 1)[1].strip())).id if len(raw.split()) > 1 else None)
+        target = (await event.get_reply_message()).sender_id if event.is_reply else ((await get_entity(args_str)).id if args_str else None)
         if target:
             rights = types.ChatAdminRights(change_info=False, post_messages=False, edit_messages=False, delete_messages=False, ban_users=False, invite_users=False, pin_messages=False, add_admins=False, manage_call=False, other=False)
             await client(EditAdminRequest(event.chat_id, target, rights, ""))
             await event.edit(f"⬇️ Demoted `{target}`.")
 
+    elif cmd == ".tban":
+        if not event.is_group or not event.is_reply:
+            await event.edit("❌ Reply to a user in a group: `.tban <time_e.g._10m>`")
+            return
+        dur_str = args[0] if args else "10m"
+        m = re.match(r"^(\d+)(s|m|h|d)$", dur_str.lower())
+        secs = int(m.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(m.group(2), 60) if m else 600
+        reply = await event.get_reply_message()
+        uid = reply.sender_id
+        await client.edit_permissions(event.chat_id, uid, view_messages=False)
+        await event.edit(f"⏳ **Temporarily banned `{uid}` for `{dur_str}`.**")
+        async def _unban_task(chat, user, delay):
+            await asyncio.sleep(delay)
+            try:
+                await client.edit_permissions(chat, user, view_messages=True, send_messages=True)
+            except Exception:
+                pass
+        asyncio.create_task(_unban_task(event.chat_id, uid, secs))
+
+    elif cmd == ".tmute":
+        if not event.is_group or not event.is_reply:
+            await event.edit("❌ Reply to a user in a group: `.tmute <time_e.g._10m>`")
+            return
+        dur_str = args[0] if args else "10m"
+        m = re.match(r"^(\d+)(s|m|h|d)$", dur_str.lower())
+        secs = int(m.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(m.group(2), 60) if m else 600
+        reply = await event.get_reply_message()
+        uid = reply.sender_id
+        await client.edit_permissions(event.chat_id, uid, send_messages=False)
+        await event.edit(f"🤐 **Temporarily muted `{uid}` for `{dur_str}`.**")
+        async def _unmute_task(chat, user, delay):
+            await asyncio.sleep(delay)
+            try:
+                await client.edit_permissions(chat, user, send_messages=True)
+            except Exception:
+                pass
+        asyncio.create_task(_unmute_task(event.chat_id, uid, secs))
+
+    elif cmd == ".softban":
+        if not event.is_group or not event.is_reply:
+            await event.edit("❌ Reply to a user in a group with `.softban`")
+            return
+        reply = await event.get_reply_message()
+        uid = reply.sender_id
+        await client.kick_participant(event.chat_id, uid)
+        await client(functions.messages.DeleteHistoryRequest(peer=event.chat_id, max_id=0, revoke=True))
+        await event.edit(f"🧹 **Softbanned `{uid}` (kicked & cleared msgs).**")
+
     # Broadcast & Actions
-    elif text.startswith(".dm") and not text.startswith(".dmfrwd"):
-        content = raw[3:].strip()
+    elif cmd in (".dm", ".msg"):
+        content = args_str
         if event.is_reply and content:
             reply = await event.get_reply_message()
             await client.send_message(reply.sender_id, content)
@@ -1872,7 +2200,17 @@ async def _cmd_dispatch(event):
                 await client.send_message(u.id, parts[1])
                 await event.edit(f"✅ DM sent to {parts[0]}")
 
-    elif text.startswith(".frwd") and not text.startswith(".frwdall"):
+    elif cmd == ".dmfrwd":
+        if not event.is_reply or not args_str:
+            await event.edit("❌ Reply to a message with `.dmfrwd @username`")
+            return
+        replied = await event.get_reply_message()
+        u = await get_entity(args_str)
+        if u:
+            await client.forward_messages(u.id, replied)
+            await event.edit(f"✅ Forwarded message to `{args_str}`")
+
+    elif cmd == ".frwd":
         if not event.is_reply:
             await event.edit("⚠️ Reply to the message.")
             return
@@ -1889,7 +2227,7 @@ async def _cmd_dispatch(event):
             await safe_sleep(sent)
         await event.edit(f"✅ Forwarded to **{sent}** DMs.")
 
-    elif text.startswith(".gc"):
+    elif cmd == ".gc":
         if not event.is_reply:
             await event.edit("⚠️ Reply to the message.")
             return
@@ -1906,7 +2244,7 @@ async def _cmd_dispatch(event):
             await safe_sleep(sent)
         await event.edit(f"✅ Broadcasted to **{sent}** groups.")
 
-    elif text.startswith(".broad"):
+    elif cmd == ".broad":
         if not event.is_reply:
             await event.edit("⚠️ Reply to the message.")
             return
@@ -1923,7 +2261,39 @@ async def _cmd_dispatch(event):
             await safe_sleep(sent)
         await event.edit(f"✅ Sent to **{sent}** users.")
 
-    elif text.startswith(".frwdall"):
+    elif cmd == ".broadcastgc":
+        if not args_str:
+            await event.edit("❌ Usage: `.broadcastgc <message>`")
+            return
+        gids = await get_all_group_ids()
+        await event.edit(f"📢 Sending message to {len(gids)} groups...")
+        sent = 0
+        for gid in gids:
+            try:
+                await client.send_message(gid, args_str)
+                sent += 1
+            except Exception:
+                pass
+            await safe_sleep(sent)
+        await event.edit(f"✅ Message sent to **{sent}** groups.")
+
+    elif cmd == ".massdm":
+        if not args_str:
+            await event.edit("❌ Usage: `.massdm <message>`")
+            return
+        dm_ids = await get_dm_ids()
+        await event.edit(f"📨 Mass DMing {len(dm_ids)} recent contacts...")
+        sent = 0
+        for uid in dm_ids:
+            try:
+                await client.send_message(uid, args_str)
+                sent += 1
+            except Exception:
+                pass
+            await safe_sleep(sent)
+        await event.edit(f"✅ Mass DM sent to **{sent}** contacts.")
+
+    elif cmd == ".frwdall":
         if not event.is_reply:
             await event.edit("⚠️ Reply to the message.")
             return
@@ -1940,7 +2310,7 @@ async def _cmd_dispatch(event):
             await safe_sleep(sent)
         await event.edit(f"✅ Forwarded to **{sent}** targets.")
 
-    elif text.startswith(".mm"):
+    elif cmd == ".mm":
         if not event.is_reply:
             await event.edit("❌ Reply to a user with `.mm`")
             return
@@ -1949,11 +2319,11 @@ async def _cmd_dispatch(event):
         await client(functions.messages.CreateChatRequest(users=[u.id], title="Syed Rehan's Middleman Service"))
         await event.edit(f"✅ **Syed Rehan's Middleman Service**\nGroup created with `{u.first_name or u.id}`")
 
-    elif text.startswith(".tag"):
+    elif cmd == ".tag":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        msg_val = raw[4:].strip() or "👋"
+        msg_val = args_str or "👋"
         participants = await client.get_participants(event.chat_id, limit=50)
         me = await client.get_me()
         tags = " ".join(f"[{p.first_name or 'user'}](tg://user?id={p.id})" for p in participants if not p.bot and p.id != me.id)
@@ -1961,30 +2331,48 @@ async def _cmd_dispatch(event):
             await client.send_message(event.chat_id, f"{msg_val}\n{tags}")
             await event.delete()
 
-    elif text == ".del":
+    elif cmd in (".del", ".delete"):
         if not event.is_private:
             await event.edit("❌ Private chats only.")
             return
         await client(DeleteHistoryRequest(peer=event.chat_id, max_id=0, revoke=True))
 
-    elif text.startswith(".purge"):
-        n = int(raw.split()[1]) if len(raw.split()) > 1 and raw.split()[1].isdigit() else 10
+    elif cmd == ".purge":
+        n = int(args[0]) if args and args[0].isdigit() else 10
         msgs = await client.get_messages(event.chat_id, limit=n + 1)
         await client.delete_messages(event.chat_id, [m.id for m in msgs])
         conf = await event.respond(f"✅ Purged {n} messages.")
         await asyncio.sleep(2)
         await conf.delete()
 
-    elif text.startswith(".close"):
-        sec = int(raw.split()[1]) if len(raw.split()) > 1 and raw.split()[1].isdigit() else 3
+    elif cmd == ".delmsgs":
+        if not event.is_reply:
+            await event.edit("❌ Reply to a user with `.delmsgs <count>`")
+            return
+        n = int(args[0]) if args and args[0].isdigit() else 10
+        reply = await event.get_reply_message()
+        target_uid = reply.sender_id
+        msgs_to_del = []
+        async for m in client.iter_messages(event.chat_id, limit=n * 5):
+            if m.sender_id == target_uid:
+                msgs_to_del.append(m.id)
+                if len(msgs_to_del) >= n:
+                    break
+        if msgs_to_del:
+            await client.delete_messages(event.chat_id, msgs_to_del)
+            await event.edit(f"✅ Deleted **{len(msgs_to_del)}** messages from user.")
+
+    elif cmd in (".close", ".leave"):
+        sec = int(args[0]) if args and args[0].isdigit() else 3
         await event.edit(f"💣 Leaving group in {sec}s...")
         await asyncio.sleep(sec)
         await client.delete_dialog(event.chat_id)
 
-    elif text.startswith(".count"):
-        parts = raw.split(None, 2)
-        sec = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 5
-        final = parts[2] if len(parts) > 2 else None
+    # COUNTDOWN TIMER (Strictly cmd == ".count")
+    elif cmd == ".count":
+        parts = args_str.split(None, 1)
+        sec = int(parts[0]) if parts and parts[0].isdigit() else 5
+        final = parts[1] if len(parts) > 1 else None
         m = await event.edit(f"⏳ **{sec}**s")
         for i in range(sec - 1, -1, -1):
             await asyncio.sleep(1)
@@ -1996,29 +2384,25 @@ async def _cmd_dispatch(event):
             await m.edit(f"**{final}**")
 
     # Utilities & Tools
-    elif text.startswith(".calc"):
-        expr = raw[6:].strip()
+    elif cmd in (".calc", ".math"):
+        expr = args_str
         try:
             res = sympy.sympify(expr) if SYMPY_OK else eval(expr, {"__builtins__": {}}, {})
             await event.edit(f"🧮 `{expr}` = `{res}`")
         except Exception:
             await event.edit("❌ Invalid expression.")
 
-    elif text.startswith(".wiki"):
-        query = raw[6:].strip()
-        if not query:
+    elif cmd == ".wiki":
+        if not args_str:
             await event.edit("❌ Usage: `.wiki query`")
             return
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _wiki_lookup, query)
+        res = await loop.run_in_executor(None, _wiki_lookup, args_str)
         await event.edit(res)
 
-    elif text.startswith(".tr") or text.startswith(".translate"):
-        cmd_end = 3 if text.startswith(".tr") else 10
-        rest = raw[cmd_end:].strip()
-        parts = rest.split(None, 1)
-        lang = parts[0].lower() if parts else "en"
-        content = parts[1] if len(parts) > 1 else ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd in (".tr", ".translate"):
+        lang = args[0].lower() if args else "en"
+        content = " ".join(args[1:]) if len(args) > 1 else ((await event.get_reply_message()).text if event.is_reply else "")
         if not content:
             await event.edit("❌ Usage: `.tr <lang> <text>` or reply.")
             return
@@ -2026,74 +2410,113 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _translate, content, lang)
         await event.edit(res)
 
-    elif text.startswith(".weather"):
-        city = raw[8:].strip() or "Mumbai"
+    elif cmd == ".weather":
+        city = args_str or "Mumbai"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _weather_info, city)
         await event.edit(res)
 
-    elif text.startswith(".crypto"):
-        coin = raw[7:].strip() or "bitcoin"
+    elif cmd == ".crypto":
+        coin = args_str or "bitcoin"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _crypto_price, coin)
         await event.edit(res)
 
-    elif text.startswith(".define"):
-        word = raw[7:].strip()
-        if not word:
+    elif cmd == ".btc":
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, _crypto_quick_quote, "btc")
+        await event.edit(res)
+
+    elif cmd == ".eth":
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, _crypto_quick_quote, "eth")
+        await event.edit(res)
+
+    elif cmd == ".sol":
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, _crypto_quick_quote, "sol")
+        await event.edit(res)
+
+    elif cmd == ".convertcrypto":
+        if len(args) < 3:
+            await event.edit("❌ Usage: `.convertcrypto <amount> <from_coin> <to_coin>`\nExample: `.convertcrypto 1 btc usd`")
+            return
+        try:
+            amt = float(args[0])
+            c_from, c_to = args[1].lower(), args[2].lower()
+            r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={c_from}&vs_currencies={c_to}", timeout=8)
+            if r.status_code == 200 and c_from in r.json():
+                rate = r.json()[c_from].get(c_to, 0)
+                tot = amt * rate
+                await event.edit(f"💰 `{amt}` **{c_from.upper()}** = `{tot:,.4f}` **{c_to.upper()}**")
+            else:
+                await event.edit("❌ Could not perform crypto conversion.")
+        except Exception as e:
+            await event.edit(f"❌ Conversion failed: {e}")
+
+    elif cmd == ".define":
+        if not args_str:
             await event.edit("❌ Usage: `.define word`")
             return
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _dictionary_lookup, word)
+        res = await loop.run_in_executor(None, _dictionary_lookup, args_str)
         await event.edit(res)
 
-    elif text.startswith(".github"):
-        user = raw[7:].strip().lstrip("@") or "rehuux"
+    elif cmd == ".github":
+        user = args_str.lstrip("@") or "rehuux"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _github_info, user)
         await event.edit(res)
 
-    elif text.startswith(".short"):
-        url = raw[6:].strip()
+    elif cmd == ".short":
+        if not args_str:
+            await event.edit("❌ Usage: `.short <url>`")
+            return
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _short_url, url)
+        res = await loop.run_in_executor(None, _short_url, args_str)
         await event.edit(res)
 
-    elif text.startswith(".qr"):
-        qr_text = raw[3:].strip()
-        if not qr_text:
+    elif cmd == ".qr":
+        if not args_str:
             await event.edit("❌ Usage: `.qr <text>`")
             return
-        qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" + urllib.parse.quote(qr_text)
-        await client.send_file(event.chat_id, qr_url, caption=f"🔳 QR for: `{qr_text}`")
+        qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" + urllib.parse.quote(args_str)
+        await client.send_file(event.chat_id, qr_url, caption=f"🔳 QR for: `{args_str}`")
         await event.delete()
 
-    elif text == ".quote":
+    elif cmd == ".quote":
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _quote_of_the_day)
         await event.edit(res)
 
-    elif text == ".joke":
+    elif cmd == ".joke":
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _random_joke)
         await event.edit(res)
 
-    elif text.startswith(".8ball"):
+    elif cmd == ".8ball":
         ans = random.choice(["It is certain.", "Without a doubt.", "Yes, definitely.", "Most likely.", "Reply hazy, try again.", "Don't count on it.", "Very doubtful."])
-        await event.edit(f"🎱 **Q:** {raw[6:].strip()}\n**A:** {ans}")
+        await event.edit(f"🎱 **Q:** {args_str}\n**A:** {ans}")
 
-    elif text.startswith(".roll"):
-        sides = int(raw.split()[1]) if len(raw.split()) > 1 and raw.split()[1].isdigit() else 6
+    elif cmd in (".roll", ".randnum"):
+        sides = int(args[0]) if args and args[0].isdigit() else 6
         await event.edit(f"🎲 Rolled: **{random.randint(1, sides)}** (1–{sides})")
 
-    elif text == ".flip":
-        await event.edit(f"**{random.choice(['🪙 Heads', '🪙 Tails'])}**")
+    elif cmd in (".flip", ".coin"):
+        if not args_str:
+            await event.edit(f"**{random.choice(['🪙 Heads', '🪙 Tails'])}**")
+        else:
+            await event.edit(f"🔁 {_fancy_font('flip', args_str)}")
 
-    elif text.startswith(".reverse"):
-        await event.edit(f"🔁 `{raw[8:].strip()[::-1]}`")
+    elif cmd == ".reverse":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(f"🔁 `{content[::-1]}`")
+        else:
+            await event.edit("❌ Usage: `.reverse <text>` or reply.")
 
     # Media & Fun
-    elif text == ".meme":
+    elif cmd == ".meme":
         loop = asyncio.get_event_loop()
         img, cap = await loop.run_in_executor(None, _random_meme)
         if img:
@@ -2102,50 +2525,57 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(cap)
 
-    elif text == ".korn":
+    elif cmd == ".korn":
         loop = asyncio.get_event_loop()
         img, cap = await loop.run_in_executor(None, _random_subreddit_post, "randi_khanna")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
 
-    elif text == ".cat":
-        loop = asyncio.get_event_loop()
-        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "youngpussylips")
-        if img:
-            await client.send_file(event.chat_id, img, caption=cap)
-            await event.delete()
+    elif cmd == ".cat":
+        await client.send_file(event.chat_id, "https://cataas.com/cat", caption="🐱 **Meow!**")
+        await event.delete()
 
-    elif text == ".trivia":
+    elif cmd == ".dog":
+        loop = asyncio.get_event_loop()
+        img = await loop.run_in_executor(None, _random_dog_photo)
+        if img:
+            await client.send_file(event.chat_id, img, caption="🐶 **Good Doggo!**")
+            await event.delete()
+        else:
+            await event.edit("❌ Couldn't fetch dog photo right now.")
+
+    elif cmd == ".trivia":
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _random_trivia)
         await event.edit(res)
 
-    elif text == ".fact":
+    elif cmd == ".fact":
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _random_fact)
         await event.edit(res)
 
-    elif text.startswith(".horoscope"):
-        sign = raw[10:].strip() or "leo"
+    elif cmd == ".horoscope":
+        sign = args_str or "leo"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _daily_horoscope, sign)
         await event.edit(res)
 
-    elif text.startswith(".country"):
-        c = raw[8:].strip() or "Japan"
+    # COUNTRY INFO (Strictly cmd in (".country", ".cntry"))
+    elif cmd in (".country", ".cntry"):
+        c = args_str or "Japan"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _country_info, c)
         await event.edit(res)
 
-    elif text.startswith(".anime"):
-        a = raw[6:].strip() or "Naruto"
+    elif cmd == ".anime":
+        a = args_str or "Naruto"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _anime_info, a)
         await event.edit(res)
 
-    elif text.startswith(".schedule"):
-        parsed = _parse_schedule(raw[9:].strip())
+    elif cmd == ".schedule":
+        parsed = _parse_schedule(args_str)
         if parsed:
             dt, msg_s = parsed
             delay = (dt - datetime.datetime.now()).total_seconds()
@@ -2158,8 +2588,8 @@ async def _cmd_dispatch(event):
             await event.edit("❌ Usage: `.schedule 30m Hello`")
 
     # OSINT & Security
-    elif text.startswith(".osint"):
-        parts = raw[6:].strip().split(None, 1)
+    elif cmd == ".osint":
+        parts = args_str.split(None, 1)
         if len(parts) >= 2:
             loop = asyncio.get_event_loop()
             if parts[0].lower() == "email":
@@ -2172,20 +2602,31 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("❌ Usage: `.osint email|username|domain <target>`")
 
-    elif text.startswith(".ip"):
-        ip = raw[3:].strip() or "8.8.8.8"
+    elif cmd == ".ip":
+        ip = args_str or "8.8.8.8"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _ip_lookup, ip)
         await event.edit(res)
 
-    elif text.startswith(".scan"):
-        url = raw[5:].strip() or "https://google.com"
+    elif cmd == ".myip":
+        try:
+            r = requests.get("https://api.ipify.org?format=json", timeout=6)
+            if r.status_code == 200:
+                pub_ip = r.json().get("ip", "N/A")
+                await event.edit(f"🌐 **Bot Public IP:** `{pub_ip}`")
+            else:
+                await event.edit("❌ Failed to resolve public IP.")
+        except Exception as e:
+            await event.edit(f"❌ Error: {e}")
+
+    elif cmd == ".scan":
+        url = args_str or "https://google.com"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _scan_url, url)
         await event.edit(res)
 
-    elif text.startswith(".portfolio"):
-        parts = raw[10:].strip().split(None, 2)
+    elif cmd == ".portfolio":
+        parts = args_str.split(None, 2)
         if not parts or parts[0].lower() == "list":
             loop = asyncio.get_event_loop()
             res = await loop.run_in_executor(None, _format_portfolio)
@@ -2202,8 +2643,8 @@ async def _cmd_dispatch(event):
             save_json(PORTFOLIO_FILE, portfolio)
             await event.edit(f"✅ Removed **{parts[1]}**.")
 
-    elif text.startswith(".repo"):
-        repo = raw[5:].strip() or "rehuux/selfbot"
+    elif cmd == ".repo":
+        repo = args_str or "rehuux/telegram-selfbot"
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _repo_stats, repo)
         await event.edit(res)
@@ -2866,7 +3307,7 @@ async def _cmd_dispatch(event):
         await client.send_file(event.chat_id, types.InputMediaDice(emoticon=emoji))
         await event.delete()
 
-    elif text == ".admins":
+    elif cmd == ".admins":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2878,7 +3319,7 @@ async def _cmd_dispatch(event):
             lines.append(f"• `{name}` {uname} | ID: `{a.id}`")
         await event.edit("\n".join(lines))
 
-    elif text == ".bots":
+    elif cmd == ".bots":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2888,7 +3329,7 @@ async def _cmd_dispatch(event):
             lines.append(f"• @{b.username} | ID: `{b.id}`")
         await event.edit("\n".join(lines))
 
-    elif text == ".members":
+    elif cmd == ".members":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2896,7 +3337,7 @@ async def _cmd_dispatch(event):
         count = getattr(chat, "participants_count", "N/A")
         await event.edit(f"👥 **Total Members in {getattr(chat, 'title', 'Chat')}:** `{count}`")
 
-    elif text == ".zombies":
+    elif cmd == ".zombies":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2907,7 +3348,7 @@ async def _cmd_dispatch(event):
                 zombies += 1
         await event.edit(f"🧟 **Found `{zombies}` Deleted / Zombie Accounts in this group.**\nRun `.clean` to remove them (admin required).")
 
-    elif text == ".clean":
+    elif cmd == ".clean":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2923,7 +3364,7 @@ async def _cmd_dispatch(event):
                     pass
         await event.edit(f"✅ **Cleaned `{cleaned}` deleted accounts from group.**")
 
-    elif text == ".dc":
+    elif cmd == ".dc":
         target = None
         if event.is_reply:
             reply = await event.get_reply_message()
@@ -2935,7 +3376,7 @@ async def _cmd_dispatch(event):
         dc_loc = dc_map.get(dc_id, f"DC{dc_id}")
         await event.edit(f"🌐 **Data Center:** `{dc_loc}` for `{target.first_name}`")
 
-    elif text == ".link":
+    elif cmd == ".link":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -2945,16 +3386,16 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Couldn't export invite link (admin rights required): {e}")
 
-    elif text.startswith(".pin"):
+    elif cmd == ".pin":
         if not event.is_reply:
             await event.edit("❌ Reply to a message with `.pin`")
             return
         reply = await event.get_reply_message()
-        notify = "notify" in raw.lower()
+        notify = "notify" in args_str.lower()
         await client.pin_message(event.chat_id, reply, notify=notify)
         await event.edit("📌 **Message pinned successfully.**")
 
-    elif text == ".unpin":
+    elif cmd == ".unpin":
         if event.is_reply:
             reply = await event.get_reply_message()
             await client.unpin_message(event.chat_id, reply)
@@ -2963,18 +3404,27 @@ async def _cmd_dispatch(event):
             await client.unpin_message(event.chat_id)
             await event.edit("📌 **Latest pinned message unpinned.**")
 
-    elif text == ".unpinall":
+    elif cmd == ".unpinall":
         try:
             await client(functions.messages.UnpinAllMessagesRequest(peer=event.chat_id))
             await event.edit("📌 **Unpinned all messages in chat.**")
         except Exception as e:
             await event.edit(f"❌ Failed to unpin all: {e}")
 
-    elif text.startswith(".title"):
+    elif cmd == ".pinned":
+        chat = await event.get_chat()
+        pinned_msg = await client.get_messages(event.chat_id, ids=getattr(chat, "pinned_msg_id", 0))
+        if pinned_msg:
+            txt = pinned_msg.text or "[Media/Attachment]"
+            await event.edit(f"📌 **Pinned Message:**\n\n{txt[:500]}")
+        else:
+            await event.edit("ℹ️ No pinned message found in this chat.")
+
+    elif cmd == ".title":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        new_title = raw[6:].strip()
+        new_title = args_str
         if not new_title:
             await event.edit("❌ Usage: `.title <New Group Title>`")
             return
@@ -2984,37 +3434,37 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Edit title failed: {e}")
 
-    elif text.startswith(".setdesc"):
+    elif cmd == ".setdesc":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        desc = raw[8:].strip()
+        desc = args_str
         try:
             await client(functions.messages.EditChatAboutRequest(peer=event.chat_id, about=desc))
             await event.edit("✅ Group description updated.")
         except Exception as e:
             await event.edit(f"❌ Failed to update description: {e}")
 
-    elif text.startswith(".slow"):
+    elif cmd in (".slow", ".slowmode"):
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        sec_str = raw[5:].strip()
-        sec = 0 if sec_str.lower() in ("off", "0", "") else (int(sec_str) if sec_str.isdigit() else 10)
+        sec_str = args[0] if args else "10"
+        sec = 0 if sec_str.lower() in ("off", "0") else (int(sec_str) if sec_str.isdigit() else 10)
         try:
             await client(functions.channels.ToggleSlowModeRequest(channel=event.chat_id, seconds=sec))
             await event.edit(f"⏱ **Slowmode set to `{sec}s`**" if sec > 0 else "⏱ **Slowmode disabled.**")
         except Exception as e:
             await event.edit(f"❌ Slowmode failed: {e}")
 
-    elif text.startswith(".lock"):
+    elif cmd == ".lock":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
-        arg = raw[5:].strip().lower()
+        arg = args[0].lower() if args else "all"
         rights = types.ChatBannedRights(
             until_date=None,
-            send_messages=False,
+            send_messages=(arg == "all"),
             send_media=(arg in ("media", "all")),
             send_stickers=(arg in ("stickers", "media", "all")),
             send_gifs=(arg in ("media", "all")),
@@ -3024,11 +3474,11 @@ async def _cmd_dispatch(event):
         )
         try:
             await client(functions.messages.EditChatDefaultBannedRightsRequest(peer=event.chat_id, banned_rights=rights))
-            await event.edit(f"🔒 **Locked `{arg or 'all'}` permissions for members.**")
+            await event.edit(f"🔒 **Locked `{arg}` permissions for members.**")
         except Exception as e:
             await event.edit(f"❌ Lock failed: {e}")
 
-    elif text.startswith(".unlock"):
+    elif cmd == ".unlock":
         if not event.is_group:
             await event.edit("❌ Groups only.")
             return
@@ -3048,22 +3498,41 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Unlock failed: {e}")
 
-    elif text.startswith(".setname"):
-        parts = raw[8:].strip().split(None, 1)
-        if not parts:
+    elif cmd == ".dialogs":
+        dialogs = await client.get_dialogs(limit=15)
+        lines = [f"💬 **Top Dialogs ({len(dialogs)}):**\n"]
+        for d in dialogs:
+            t = d.title or "Private User"
+            lines.append(f"• `{t}` (ID: `{d.id}`)")
+        await event.edit("\n".join(lines))
+
+    elif cmd == ".firstmsg":
+        await event.edit("🔍 Fetching first message in chat...")
+        try:
+            async for m in client.iter_messages(event.chat_id, reverse=True, limit=1):
+                txt = m.text or "[Media/Service Message]"
+                await event.edit(f"📜 **First Message in Chat:**\n\n_{txt[:400]}_\n\n🗓 `{m.date.strftime('%Y-%m-%d %H:%M:%S')}`")
+                return
+        except Exception as e:
+            await event.edit(f"❌ Error: {e}")
+
+    elif cmd == ".setname":
+        if not args:
             await event.edit("❌ Usage: `.setname <First> [Last]`")
             return
-        first = parts[0]
-        last = parts[1] if len(parts) > 1 else ""
+        first = args[0]
+        last = " ".join(args[1:]) if len(args) > 1 else ""
         await client(functions.account.UpdateProfileRequest(first_name=first, last_name=last))
         await event.edit(f"✅ Name updated to: **{first} {last}**".strip())
 
-    elif text.startswith(".setbio"):
-        bio = raw[7:].strip()
-        await client(functions.account.UpdateProfileRequest(about=bio))
-        await event.edit(f"✅ Bio updated to:\n_{bio}_")
+    elif cmd == ".setbio":
+        if not args_str:
+            await event.edit("❌ Usage: `.setbio <Bio text>`")
+            return
+        await client(functions.account.UpdateProfileRequest(about=args_str))
+        await event.edit(f"✅ Bio updated to:\n_{args_str}_")
 
-    elif text == ".setpfp":
+    elif cmd == ".setpfp":
         if not event.is_reply:
             await event.edit("❌ Reply to a photo with `.setpfp`")
             return
@@ -3080,7 +3549,7 @@ async def _cmd_dispatch(event):
             if os.path.exists(photo_path):
                 os.remove(photo_path)
 
-    elif text == ".delpfp":
+    elif cmd == ".delpfp":
         photos = await client.get_profile_photos("me")
         if photos:
             await client(functions.photos.DeletePhotosRequest(id=[types.InputPhoto(id=photos[0].id, access_hash=photos[0].access_hash, file_reference=photos[0].file_reference)]))
@@ -3088,7 +3557,7 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("❌ No profile picture found.")
 
-    elif text == ".clearcache":
+    elif cmd == ".clearcache":
         count = 0
         for f in os.listdir(TEMP_DIR):
             fp = os.path.join(TEMP_DIR, f)
@@ -3100,8 +3569,8 @@ async def _cmd_dispatch(event):
                 pass
         await event.edit(f"🧹 **Cache cleared:** Deleted `{count}` temporary files.")
 
-    elif text.startswith(".purgeme"):
-        n = int(raw.split()[1]) if len(raw.split()) > 1 and raw.split()[1].isdigit() else 10
+    elif cmd == ".purgeme":
+        n = int(args[0]) if args and args[0].isdigit() else 10
         me = await client.get_me()
         msgs_to_del = []
         async for m in client.iter_messages(event.chat_id, limit=n * 5):
@@ -3115,7 +3584,7 @@ async def _cmd_dispatch(event):
             await asyncio.sleep(2)
             await conf.delete()
 
-    elif text == ".delall":
+    elif cmd == ".delall":
         if not event.is_reply:
             await event.edit("❌ Reply to a user's message to delete all their messages.")
             return
@@ -3132,7 +3601,7 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("ℹ️ No recent messages found from this user.")
 
-    elif text.startswith(".warn"):
+    elif cmd == ".warn":
         if not event.is_reply:
             await event.edit("❌ Reply to a user to issue a warning.")
             return
@@ -3149,7 +3618,7 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(f"⚠️ **Warning issued to `{uid}`** [{curr}/3 warnings]")
 
-    elif text.startswith(".warns"):
+    elif cmd == ".warns":
         if not event.is_reply:
             await event.edit("❌ Reply to a user to check warnings.")
             return
@@ -3158,7 +3627,7 @@ async def _cmd_dispatch(event):
         warns_db = load_json(os.path.join(DATA_DIR, "warns.json"), {})
         await event.edit(f"⚠️ **User `{uid}` has `{warns_db.get(uid, 0)}` warnings.**")
 
-    elif text.startswith(".resetwarns"):
+    elif cmd == ".resetwarns":
         if not event.is_reply:
             await event.edit("❌ Reply to a user to reset warnings.")
             return
@@ -3170,30 +3639,20 @@ async def _cmd_dispatch(event):
         save_json(wfile, warns_db)
         await event.edit(f"✅ **Warnings reset for user `{uid}`.**")
 
-    elif text == ".unafk":
-        if afk.active:
-            dur = afk.duration_text()
-            afk.disable()
-            await event.edit(f"✅ **AFK Disabled.** Away for {dur}.")
-        else:
-            await event.edit("ℹ️ AFK was not active.")
-
-    elif text.startswith(".say"):
-        content = raw[4:].strip()
-        if content:
+    elif cmd == ".say":
+        if args_str:
             await event.delete()
-            await client.send_message(event.chat_id, content)
+            await client.send_message(event.chat_id, args_str)
 
-    elif text.startswith(".echo"):
-        msg_to_type = raw[5:].strip()
-        if not msg_to_type:
+    elif cmd == ".echo":
+        if not args_str:
             await event.edit("❌ Usage: `.echo <text>`")
             return
         buf = ""
         m = await event.edit("⚡")
-        for char in msg_to_type:
+        for char in args_str:
             buf += char
-            if len(buf) % 3 == 0 or len(buf) == len(msg_to_type):
+            if len(buf) % 3 == 0 or len(buf) == len(args_str):
                 try:
                     await m.edit(buf + " ▍")
                     await asyncio.sleep(0.1)
@@ -3201,8 +3660,8 @@ async def _cmd_dispatch(event):
                     pass
         await m.edit(buf)
 
-    elif text.startswith(".poll"):
-        parts = [p.strip() for p in raw[5:].split("|") if p.strip()]
+    elif cmd == ".poll":
+        parts = [p.strip() for p in args_str.split("|") if p.strip()]
         if len(parts) < 3:
             await event.edit("❌ Usage: `.poll Question | Option 1 | Option 2 [| Option 3]`")
             return
@@ -3213,13 +3672,30 @@ async def _cmd_dispatch(event):
         await client.send_file(event.chat_id, poll_obj)
         await event.delete()
 
-    elif text.startswith(".timer"):
-        parts = raw[6:].strip().split(None, 1)
-        if not parts or not parts[0].isdigit():
+    elif cmd == ".type":
+        sec = int(args[0]) if args and args[0].isdigit() else 5
+        await event.delete()
+        async with client.action(event.chat_id, "typing"):
+            await asyncio.sleep(sec)
+
+    elif cmd == ".upload":
+        sec = int(args[0]) if args and args[0].isdigit() else 5
+        await event.delete()
+        async with client.action(event.chat_id, "document"):
+            await asyncio.sleep(sec)
+
+    elif cmd == ".recordaudio":
+        sec = int(args[0]) if args and args[0].isdigit() else 5
+        await event.delete()
+        async with client.action(event.chat_id, "record-audio"):
+            await asyncio.sleep(sec)
+
+    elif cmd == ".timer":
+        if not args or not args[0].isdigit():
             await event.edit("❌ Usage: `.timer <seconds> [label]`\nExample: `.timer 30 Coffee Break`")
             return
-        dur = int(parts[0])
-        label = parts[1] if len(parts) > 1 else "Timer"
+        dur = int(args[0])
+        label = " ".join(args[1:]) if len(args) > 1 else "Timer"
         m = await event.edit(f"⏱ **{label}:** `{dur}`s remaining...")
         for remaining in range(dur - 1, 0, -5):
             await asyncio.sleep(min(5, remaining))
@@ -3230,11 +3706,10 @@ async def _cmd_dispatch(event):
         await asyncio.sleep(1)
         await m.edit(f"🔔 **{label} FINISHED!** ({dur}s elapsed)")
 
-    elif text.startswith(".todo"):
-        parts = raw[5:].strip().split(None, 1)
+    elif cmd == ".todo":
         todo_file = os.path.join(DATA_DIR, "todos.json")
         todos = load_json(todo_file, [])
-        if not parts or parts[0].lower() == "list":
+        if not args or args[0].lower() == "list":
             if not todos:
                 await event.edit("📝 **Your Todo List is empty!**\nAdd one with `.todo add <task>`")
             else:
@@ -3243,24 +3718,190 @@ async def _cmd_dispatch(event):
                     status = "✅" if t.get("done") else "⬜"
                     lines.append(f"`{i}.` {status} {t['task']}")
                 await event.edit("\n".join(lines))
-        elif parts[0].lower() == "add" and len(parts) > 1:
-            todos.append({"task": parts[1], "done": False, "created": str(datetime.datetime.now().strftime("%d %b %H:%M"))})
+        elif args[0].lower() == "add" and len(args) > 1:
+            task_t = " ".join(args[1:])
+            todos.append({"task": task_t, "done": False, "created": str(datetime.datetime.now().strftime("%d %b %H:%M"))})
             save_json(todo_file, todos)
-            await event.edit(f"✅ Added task: **{parts[1]}**")
-        elif parts[0].lower() == "done" and len(parts) > 1 and parts[1].isdigit():
-            idx = int(parts[1]) - 1
+            await event.edit(f"✅ Added task: **{task_t}**")
+        elif args[0].lower() == "done" and len(args) > 1 and args[1].isdigit():
+            idx = int(args[1]) - 1
             if 0 <= idx < len(todos):
                 todos[idx]["done"] = True
                 save_json(todo_file, todos)
                 await event.edit(f"✅ Marked task #{idx+1} as done!")
-        elif parts[0].lower() in ("del", "delete") and len(parts) > 1 and parts[1].isdigit():
-            idx = int(parts[1]) - 1
+        elif args[0].lower() in ("del", "delete") and len(args) > 1 and args[1].isdigit():
+            idx = int(args[1]) - 1
             if 0 <= idx < len(todos):
                 removed = todos.pop(idx)
                 save_json(todo_file, todos)
                 await event.edit(f"🗑 Deleted task: **{removed['task']}**")
 
-    elif text == ".sysinfo":
+    # Additional Utilities, Transformations & Games
+    elif cmd in (".wordcount", ".countwords"):
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(_word_count_stats(content))
+        else:
+            await event.edit("❌ Provide text or reply to a message.")
+
+    elif cmd == ".epoch":
+        now_ts = int(time.time())
+        await event.edit(f"⏰ **Unix Epoch Timestamp:**\n• **Seconds:** `{now_ts}`\n• **Milliseconds:** `{int(time.time()*1000)}`\n• **UTC Time:** `{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`")
+
+    elif cmd == ".age":
+        if not args:
+            await event.edit("❌ Usage: `.age YYYY-MM-DD`\nExample: `.age 2000-05-15`")
+            return
+        try:
+            b_date = datetime.datetime.strptime(args[0], "%Y-%m-%d")
+            today = datetime.datetime.today()
+            age_years = today.year - b_date.year - ((today.month, today.day) < (b_date.month, b_date.day))
+            total_days = (today - b_date).days
+            await event.edit(f"🎂 **Age Calculation for `{args[0]}`:**\n• **Years:** `{age_years}` years old\n• **Days Alive:** `{total_days:,}` days")
+        except Exception:
+            await event.edit("❌ Invalid date format. Use `YYYY-MM-DD`.")
+
+    elif cmd == ".daysuntil":
+        if not args:
+            await event.edit("❌ Usage: `.daysuntil YYYY-MM-DD`\nExample: `.daysuntil 2027-01-01`")
+            return
+        try:
+            target_d = datetime.datetime.strptime(args[0], "%Y-%m-%d")
+            today = datetime.datetime.today()
+            delta = (target_d - today).days
+            await event.edit(f"📅 **Days Until `{args[0]}`:** `{delta}` days remaining.")
+        except Exception:
+            await event.edit("❌ Invalid date format. Use `YYYY-MM-DD`.")
+
+    elif cmd == ".pick":
+        options = [p.strip() for p in args_str.split(",") if p.strip()] if "," in args_str else args
+        if len(options) >= 2:
+            chosen = random.choice(options)
+            await event.edit(f"🎯 **Decision:** `{chosen}`")
+        else:
+            await event.edit("❌ Usage: `.pick option 1, option 2, option 3`")
+
+    elif cmd == ".color":
+        col_hex = args[0].lstrip("#") if args else f"{random.randint(0, 0xFFFFFF):06x}"
+        await event.edit(f"🎨 **Color Info:**\n• **HEX:** `#{col_hex.upper()}`\n• **Preview:** https://singlecolorimage.com/get/{col_hex}/400x100.png")
+
+    elif cmd == ".upper":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(content.upper())
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".lower":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(content.lower())
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".titlecase":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(content.title())
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".superscript":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(_superscript_text(content))
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".subscript":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(_subscript_text(content))
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".httpstatus":
+        code = args[0] if args else "200"
+        await event.edit(_http_status_lookup(code))
+
+    elif cmd == ".urlencode":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(f"🔗 **URL Encoded:**\n`{urllib.parse.quote(content)}`")
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".urldecode":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
+        if content:
+            await event.edit(f"🔗 **URL Decoded:**\n`{urllib.parse.unquote(content)}`")
+        else:
+            await event.edit("❌ Provide text or reply.")
+
+    elif cmd == ".uuid":
+        await event.edit(f"🆔 **Generated UUIDv4:**\n`{uuid4()}`")
+
+    elif cmd == ".bored":
+        act = random.choice(BORED_ACTIVITIES)
+        await event.edit(f"💡 **Idea for boredom:**\n_{act}_")
+
+    elif cmd == ".insult":
+        target = f"**{args_str}**, " if args_str else ""
+        await event.edit(f"😈 {target}{random.choice(INSULTS_TECH)}")
+
+    elif cmd == ".rps":
+        choices = ["Rock 🪨", "Paper 📄", "Scissors ✂️"]
+        user_c = args[0].lower() if args else "rock"
+        bot_c = random.choice(choices)
+        await event.edit(f"🎮 **Rock Paper Scissors:**\n• **You picked:** `{user_c.capitalize()}`\n• **Opponent:** {bot_c}")
+
+    elif cmd == ".truth":
+        await event.edit(f"❓ **Truth Question:**\n_{random.choice(TRUTH_PROMPTS)}_")
+
+    elif cmd == ".dare":
+        await event.edit(f"🔥 **Dare Challenge:**\n_{random.choice(DARE_PROMPTS)}_")
+
+    elif cmd == ".hypnotize":
+        m = await event.edit("🌀 **Focus on the spiral...**")
+        frames = ["🌀 3...", "💫 2...", "✨ 1...", "😵‍💫 **You are now under my command!**"]
+        for f in frames:
+            await asyncio.sleep(0.8)
+            await m.edit(f)
+
+    elif cmd == ".hack":
+        target = args_str or "target_server"
+        m = await event.edit(f"💻 **Initializing exploit against `{target}`...**")
+        steps = [
+            f"📡 Bypassing Cloudflare WAF on `{target}`...",
+            f"🔓 Injecting SQL payload & gaining root shell...",
+            f"📦 Extracting database credentials & SSL certificates...",
+            f"✅ **Target `{target}` successfully compromised!**"
+        ]
+        for s in steps:
+            await asyncio.sleep(0.9)
+            await m.edit(s)
+
+    elif cmd == ".rates":
+        try:
+            r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=8)
+            if r.status_code == 200:
+                rates = r.json().get("rates", {})
+                await event.edit(f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+💱 **GLOBAL FX RATES (Base USD)**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+• **EUR:** `{rates.get('EUR', 'N/A')}`
+• **GBP:** `{rates.get('GBP', 'N/A')}`
+• **INR:** `{rates.get('INR', 'N/A')}`
+• **CAD:** `{rates.get('CAD', 'N/A')}`
+• **AED:** `{rates.get('AED', 'N/A')}`
+• **JPY:** `{rates.get('JPY', 'N/A')}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━""")
+            else:
+                await event.edit("❌ Failed to fetch rates.")
+        except Exception as e:
+            await event.edit(f"❌ Error: {e}")
+
+    elif cmd == ".sysinfo":
         proc_uptime = int(time.time() - BOT_START_TIME)
         h, rem = divmod(proc_uptime, 3600)
         m, s = divmod(rem, 60)
@@ -3278,21 +3919,21 @@ async def _cmd_dispatch(event):
 ✓ **Python:** `{platform.python_version()}` ({platform.system()} {platform.machine()})
 ✓ **Uptime:** `{h}h {m}m {s}s`
 ✓ **Memory Footprint:** `{ram_str}`
-✓ **Active Threads:** `{asyncio.all_tasks().__len__()}`
+✓ **Active Tasks:** `{len(asyncio.all_tasks())}`
 ✓ **Total Commands:** `{sum(len(v) for v in HELP_CATEGORIES.values())}+`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━""")
 
-    elif text == ".restart":
+    elif cmd == ".restart":
         await event.edit("🔄 **SelfBot is restarting... Back in ~3 seconds.**")
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
-    elif text == ".unmuteall":
+    elif cmd == ".unmuteall":
         count = len(muted_users)
         muted_users.clear()
         save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
         await event.edit(f"✅ **Unmuted all `{count}` users** from selfbot memory.")
 
-    elif text == ".unbanall":
+    elif cmd == ".unbanall":
         count = len(banned_users)
         banned_users.clear()
         save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
@@ -3355,7 +3996,7 @@ async def incoming_handler(event):
         sender_id = event.sender_id
         if afk.should_reply(sender_id):
             afk.mark_replied(sender_id)
-            afk_text = f"{afk.message}\n\n_I have been offline for {afk.duration_text()}._"
+            afk_text = afk.message
             try:
                 if len(afk_text) <= 1024:
                     await client.send_file(event.chat_id, AFK_GIF_URL, caption=afk_text)
