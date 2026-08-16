@@ -1822,6 +1822,7 @@ async def _cmd_dispatch(event):
     if not raw.startswith("."):
         return
 
+    text = raw.lower()
     tokens = raw.split()
     if not tokens:
         return
@@ -2649,7 +2650,7 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _repo_stats, repo)
         await event.edit(res)
 
-    elif text == ".ocr":
+    elif cmd == ".ocr":
         if not event.is_reply:
             await event.edit("❌ Reply to an image.")
             return
@@ -2667,8 +2668,8 @@ async def _cmd_dispatch(event):
             if os.path.exists(img_path):
                 os.remove(img_path)
 
-    elif text.startswith(".ghost"):
-        arg = raw[6:].strip().lower()
+    elif cmd == ".ghost":
+        arg = args[0].lower() if args else ""
         if arg == "on":
             ghost_mode.enable()
             await client(functions.account.UpdateStatusRequest(offline=True))
@@ -2680,32 +2681,32 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(f"Ghost Mode: `{'ON' if ghost_mode.enabled else 'OFF'}`\nUsage: `.ghost on|off`")
 
-    elif text == ".analytics":
+    elif cmd == ".analytics":
         msgs = await client.get_messages(event.chat_id, limit=500)
         total = len(msgs)
         media = sum(1 for m in msgs if m.media)
         links = sum(1 for m in msgs if m.text and "http" in m.text)
         await event.edit(f"📊 **Chat Analytics (Last {total} msgs)**\n\n• **Total:** `{total}`\n• **Media:** `{media}`\n• **Links:** `{links}`")
 
-    elif text == ".mood":
+    elif cmd == ".mood":
         if not event.is_reply:
             await event.edit("❌ Reply to a message.")
             return
         reply = await event.get_reply_message()
         await event.edit(_analyze_mood(reply.text or ""))
 
-    elif text.startswith(".secret"):
+    elif cmd == ".secret":
         if not CRYPTO_OK:
             await event.edit("❌ cryptography library required.")
             return
-        parts = raw[7:].strip().split(None, 1)
-        if not parts:
+        if not args:
             await event.edit("❌ Usage: `.secret add <text>` | `.secret list` | `.secret view <n>` | `.secret delete <n>`")
             return
-        act = parts[0].lower()
-        if act == "add" and len(parts) >= 2:
+        act = args[0].lower()
+        if act == "add" and len(args) >= 2:
+            sec_text = " ".join(args[1:])
             notes = _load_secret_notes()
-            notes.append(parts[1])
+            notes.append(sec_text)
             _save_secret_notes(notes)
             await event.delete()
             await client.send_message(event.chat_id, f"🔐 Secret note #{len(notes)} encrypted & saved.")
@@ -2713,20 +2714,20 @@ async def _cmd_dispatch(event):
             notes = _load_secret_notes()
             lines = [f"{i+1}. {n[:25]}..." for i, n in enumerate(notes)]
             await event.edit(f"🔐 **Encrypted Vault ({len(notes)} notes):**\n" + "\n".join(lines))
-        elif act == "view" and len(parts) >= 2 and parts[1].isdigit():
-            idx = int(parts[1]) - 1
+        elif act == "view" and len(args) >= 2 and args[1].isdigit():
+            idx = int(args[1]) - 1
             notes = _load_secret_notes()
             if 0 <= idx < len(notes):
                 await event.edit(f"🔐 **Note #{idx+1}:**\n{notes[idx]}")
-        elif act == "delete" and len(parts) >= 2 and parts[1].isdigit():
-            idx = int(parts[1]) - 1
+        elif act in ("del", "delete") and len(args) >= 2 and args[1].isdigit():
+            idx = int(args[1]) - 1
             notes = _load_secret_notes()
             if 0 <= idx < len(notes):
                 notes.pop(idx)
                 _save_secret_notes(notes)
                 await event.edit("✅ Note deleted.")
 
-    elif text == ".net":
+    elif cmd == ".net":
         start_t = time.time()
         dns_ok = False
         try:
@@ -2737,14 +2738,13 @@ async def _cmd_dispatch(event):
         ping_ms = int((time.time() - start_t) * 1000)
         await event.edit(f"🌐 **Network Diagnostics:**\n\n✓ **DNS:** `{'OK' if dns_ok else 'Failed'}`\n✓ **Gateway Ping:** `{ping_ms} ms`\n✓ **Status:** `🟢 Online`")
 
-    elif text.startswith(".whale"):
-        arg = raw[6:].strip().lower()
+    elif cmd == ".whale":
+        arg = args[0].lower() if args else ""
         whale_alert_active = (arg == "on")
         save_json(WHALE_STATE_FILE, {"enabled": whale_alert_active})
         await event.edit(f"🐋 **Whale Alert:** `{'Enabled' if whale_alert_active else 'Disabled'}`")
 
-    elif text.startswith(".flair"):
-        args = raw[6:].strip().split()
+    elif cmd == ".flair":
         me = await client.get_me()
         base_name = me.first_name or "Rehu"
         if not args:
@@ -2758,7 +2758,7 @@ async def _cmd_dispatch(event):
             await client(functions.account.UpdateProfileRequest(first_name=new_name))
             await event.edit(f"✅ Flair applied: **{new_name}**")
 
-    elif text == ".scanqr":
+    elif cmd == ".scanqr":
         if not event.is_reply:
             await event.edit("❌ Reply to a QR image.")
             return
@@ -2773,44 +2773,40 @@ async def _cmd_dispatch(event):
             if os.path.exists(img_path):
                 os.remove(img_path)
 
-    elif text.startswith(".hash"):
-        c = raw[5:].strip()
+    elif cmd == ".hash":
+        c = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if c:
             h = _generate_hashes(c)
             await event.edit(f"🔑 **Hashes for `{c[:30]}`:**\n\n• **MD5:** `{h['MD5']}`\n• **SHA1:** `{h['SHA1']}`\n• **SHA256:** `{h['SHA256']}`")
+        else:
+            await event.edit("❌ Usage: `.hash <text>` or reply.")
 
-    elif text.startswith(".currency"):
-        parts = raw[9:].strip().split()
-        if len(parts) == 3:
+    elif cmd == ".currency":
+        if len(args) == 3:
             loop = asyncio.get_event_loop()
-            res = await loop.run_in_executor(None, _convert_currency, float(parts[0]), parts[1], parts[2])
+            res = await loop.run_in_executor(None, _convert_currency, float(args[0]), args[1], args[2])
             await event.edit(res)
+        else:
+            await event.edit("❌ Usage: `.currency 100 USD INR`")
 
-    elif text.startswith(".genpass"):
-        l = int(raw.split()[1]) if len(raw.split()) > 1 and raw.split()[1].isdigit() else 16
+    elif cmd == ".genpass":
+        l = int(args[0]) if args and args[0].isdigit() else 16
         chars = string.ascii_letters + string.digits + "!@#$%^&*()"
         pwd = "".join(random.choice(chars) for _ in range(l))
         await event.edit(f"🔑 **Generated Password ({l} chars):**\n`{pwd}`")
 
-    elif text.startswith(".b64"):
-        parts = raw[4:].strip().split(None, 1)
-        if len(parts) == 2:
-            if parts[0].lower() == "encode":
-                await event.edit(f"🔠 **Base64 Encoded:**\n`{base64.b64encode(parts[1].encode()).decode()}`")
+    elif cmd == ".b64":
+        if len(args) >= 2:
+            val_b64 = " ".join(args[1:])
+            if args[0].lower() == "encode":
+                await event.edit(f"🔠 **Base64 Encoded:**\n`{base64.b64encode(val_b64.encode()).decode()}`")
             else:
-                await event.edit(f"🔠 **Base64 Decoded:**\n`{base64.b64decode(parts[1].encode()).decode(errors='replace')}`")
+                await event.edit(f"🔠 **Base64 Decoded:**\n`{base64.b64decode(val_b64.encode()).decode(errors='replace')}`")
+        else:
+            await event.edit("❌ Usage: `.b64 encode <text>` or `.b64 decode <b64>`")
 
-    elif text.startswith(".say"):
-        content = raw[4:].strip()
-        if content:
-            await event.delete()
-            await client.send_message(event.chat_id, content)
-
-    elif text.startswith(".paste") or text.startswith(".haste"):
-        content = raw.split(None, 1)[1] if len(raw.split(None, 1)) > 1 else ""
-        if not content and event.is_reply:
-            reply = await event.get_reply_message()
-            content = reply.raw_text or reply.message or ""
+    elif cmd in (".paste", ".haste"):
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if not content:
             await event.edit("❌ Provide text or reply to a message: `.paste <text>`")
             return
@@ -2819,9 +2815,8 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _paste_text, content)
         await event.edit(res)
 
-    elif text.startswith(".tts") or text.startswith(".voice"):
-        args = raw.split(None, 1)
-        content = args[1] if len(args) > 1 else ""
+    elif cmd in (".tts", ".voice"):
+        content = args_str
         lang = "en"
         if not content and event.is_reply:
             reply = await event.get_reply_message()
@@ -2845,8 +2840,8 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("❌ Failed to generate TTS audio.")
 
-    elif text.startswith(".remind"):
-        parts = raw[7:].strip().split(None, 1)
+    elif cmd == ".remind":
+        parts = args_str.split(None, 1)
         if len(parts) < 2:
             await event.edit("❌ Usage: `.remind <10s/5m/1h> <message>`\nExample: `.remind 10m Call Mom`")
             return
@@ -2873,12 +2868,11 @@ async def _cmd_dispatch(event):
                 log_error("reminder", e)
         asyncio.create_task(_remind_task(chat_id, seconds, rem_msg))
 
-    elif text.startswith(".react"):
+    elif cmd == ".react":
         if not event.is_reply:
             await event.edit("❌ Reply to a message with `.react <emoji>` (e.g. `.react 🔥`)")
             return
-        parts = raw[6:].strip().split()
-        emoji = parts[0] if parts else "🔥"
+        emoji = args[0] if args else "🔥"
         reply = await event.get_reply_message()
         try:
             await client(functions.messages.SendReactionRequest(
@@ -2890,13 +2884,13 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Reaction failed: {e}")
 
-    elif text in (".speed", ".speedtest"):
+    elif cmd in (".speed", ".speedtest"):
         await event.edit("🚀 **Running SpeedTest... Please wait (~10s)**")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _run_speedtest_sync)
         await event.edit(res)
 
-    elif text == ".unread":
+    elif cmd == ".unread":
         await event.edit("📊 **Scanning dialogs for unread counts...**")
         total_unread = 0
         unread_pms = 0
@@ -2920,20 +2914,19 @@ async def _cmd_dispatch(event):
 ✓ **Unread Channels:** `{unread_channels}`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━""")
 
-    elif text.startswith(".dns"):
-        parts = raw[4:].strip().split()
-        if not parts:
+    elif cmd == ".dns":
+        if not args:
             await event.edit("❌ Usage: `.dns <domain> [A/AAAA/MX/TXT/NS]`\nExample: `.dns google.com MX`")
             return
-        domain = parts[0]
-        qtype = parts[1] if len(parts) > 1 else "A"
+        domain = args[0]
+        qtype = args[1].upper() if len(args) > 1 else "A"
         await event.edit(f"🔍 **Querying DNS ({qtype}) for `{domain}`...**")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _dns_query, domain, qtype)
         await event.edit(res)
 
-    elif text.startswith(".whois"):
-        domain = raw[6:].strip()
+    elif cmd == ".whois":
+        domain = args[0] if args else ""
         if not domain:
             await event.edit("❌ Usage: `.whois <domain>`\nExample: `.whois telegram.org`")
             return
@@ -2942,8 +2935,8 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _whois_query, domain)
         await event.edit(res)
 
-    elif text.startswith(".bin"):
-        bin_no = raw[4:].strip()
+    elif cmd == ".bin":
+        bin_no = args[0] if args else ""
         if not bin_no:
             await event.edit("❌ Usage: `.bin <6-digit-bin>`\nExample: `.bin 453201`")
             return
@@ -2952,8 +2945,8 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _bin_lookup, bin_no)
         await event.edit(res)
 
-    elif text.startswith(".time") or text.startswith(".worldtime"):
-        city = raw.split(None, 1)[1] if len(raw.split(None, 1)) > 1 else ""
+    elif cmd in (".time", ".worldtime"):
+        city = args_str
         if not city:
             await event.edit("❌ Usage: `.time <city/timezone>`\nExample: `.time Tokyo` or `.time London`")
             return
@@ -2962,8 +2955,7 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _world_time, city)
         await event.edit(res)
 
-    elif text.startswith(".unit") or text.startswith(".convert"):
-        args = raw.split()[1:]
+    elif cmd in (".unit", ".convert"):
         if len(args) == 4 and args[2].lower() == "to":
             try:
                 val = float(args[0])
@@ -2982,11 +2974,8 @@ async def _cmd_dispatch(event):
                 pass
         await event.edit("❌ Usage: `.unit <val> <from> to <to>`\nExample: `.unit 100 km to mi` or `.unit 37 c to f` or `.unit 5 gb to mb`")
 
-    elif text.startswith(".json") or text.startswith(".prettify"):
-        body = raw.split(None, 1)[1] if len(raw.split(None, 1)) > 1 else ""
-        if not body and event.is_reply:
-            reply = await event.get_reply_message()
-            body = reply.raw_text or reply.message or ""
+    elif cmd in (".json", ".prettify"):
+        body = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if not body:
             await event.edit("❌ Provide JSON text or reply to a JSON message.")
             return
@@ -3006,119 +2995,118 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Invalid JSON syntax: `{e}`")
 
-    elif text.startswith(".font") or text.startswith(".fancy"):
-        parts = raw.split(None, 2)
-        if len(parts) < 3:
+    elif cmd in (".font", ".fancy"):
+        if len(args) < 2:
             await event.edit("❌ Usage: `.font <style> <text>`\nStyles: `bubble`, `gothic`, `bold`, `italic`, `mono`, `square`, `smallcaps`, `cursive`, `flip`\nExample: `.font gothic Welcome to cyber security`")
             return
-        style, ftext = parts[1], parts[2]
+        style = args[0].lower()
+        ftext = " ".join(args[1:])
         res = _fancy_font(style, ftext)
         await event.edit(res)
 
-    elif text.startswith(".bubble"):
-        content = raw[7:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".bubble":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("bubble", content))
         else:
             await event.edit("❌ Usage: `.bubble <text>` or reply.")
 
-    elif text.startswith(".gothic"):
-        content = raw[7:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".gothic":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("gothic", content))
         else:
             await event.edit("❌ Usage: `.gothic <text>` or reply.")
 
-    elif text.startswith(".bold") and not text.startswith(".bold_"):
-        content = raw[5:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".bold":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("bold", content))
         else:
             await event.edit("❌ Usage: `.bold <text>` or reply.")
 
-    elif text.startswith(".italic"):
-        content = raw[7:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".italic":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("italic", content))
         else:
             await event.edit("❌ Usage: `.italic <text>` or reply.")
 
-    elif text.startswith(".mono"):
-        content = raw[5:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".mono":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("mono", content))
         else:
             await event.edit("❌ Usage: `.mono <text>` or reply.")
 
-    elif text.startswith(".square"):
-        content = raw[7:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".square":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("square", content))
         else:
             await event.edit("❌ Usage: `.square <text>` or reply.")
 
-    elif text.startswith(".smallcaps"):
-        content = raw[10:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".smallcaps":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("smallcaps", content))
         else:
             await event.edit("❌ Usage: `.smallcaps <text>` or reply.")
 
-    elif text.startswith(".cursive"):
-        content = raw[8:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".cursive":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_fancy_font("cursive", content))
         else:
             await event.edit("❌ Usage: `.cursive <text>` or reply.")
 
-    elif text.startswith(".shout"):
-        content = raw[6:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".shout":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_shout_text(content))
         else:
             await event.edit("❌ Usage: `.shout <text>` or reply.")
 
-    elif text.startswith(".mock"):
-        content = raw[5:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".mock":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_mock_text(content))
         else:
             await event.edit("❌ Usage: `.mock <text>` or reply.")
 
-    elif text.startswith(".leet"):
-        content = raw[5:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".leet":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_leet_text(content))
         else:
             await event.edit("❌ Usage: `.leet <text>` or reply.")
 
-    elif text.startswith(".spoiler"):
-        content = raw[8:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".spoiler":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(f"||{content}||")
         else:
             await event.edit("❌ Usage: `.spoiler <text>` or reply.")
 
-    elif text.startswith(".zalgo"):
-        content = raw[6:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".zalgo":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(_zalgo_text(content))
         else:
             await event.edit("❌ Usage: `.zalgo <text>` or reply.")
 
-    elif text.startswith(".strike"):
-        content = raw[7:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".strike":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(f"~~{content}~~")
         else:
             await event.edit("❌ Usage: `.strike <text>` or reply.")
 
-    elif text.startswith(".hex"):
-        parts = raw[4:].strip().split(None, 1)
-        if len(parts) < 2:
+    elif cmd == ".hex":
+        if len(args) < 2:
             await event.edit("❌ Usage: `.hex enc <text>` or `.hex dec <hex-string>`")
             return
-        mode, val = parts[0].lower(), parts[1]
+        mode, val = args[0].lower(), " ".join(args[1:])
         try:
             if mode == "enc":
                 await event.edit(f"🔢 **Hex Encoded:**\n`{val.encode('utf-8').hex()}`")
@@ -3127,12 +3115,11 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Hex operation failed: {e}")
 
-    elif text.startswith(".binary"):
-        parts = raw[7:].strip().split(None, 1)
-        if len(parts) < 2:
+    elif cmd == ".binary":
+        if len(args) < 2:
             await event.edit("❌ Usage: `.binary enc <text>` or `.binary dec <binary-string>`")
             return
-        mode, val = parts[0].lower(), parts[1]
+        mode, val = args[0].lower(), " ".join(args[1:])
         try:
             if mode == "enc":
                 b_str = " ".join(f"{ord(c):08b}" for c in val)
@@ -3143,24 +3130,23 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Binary operation failed: {e}")
 
-    elif text.startswith(".rot13"):
-        content = raw[6:].strip() or ((await event.get_reply_message()).text if event.is_reply else "")
+    elif cmd == ".rot13":
+        content = args_str or ((await event.get_reply_message()).text if event.is_reply else "")
         if content:
             await event.edit(f"🔄 **ROT13:**\n`{codecs.encode(content, 'rot_13')}`")
         else:
             await event.edit("❌ Usage: `.rot13 <text>` or reply.")
 
-    elif text.startswith(".morse"):
-        parts = raw[6:].strip().split(None, 1)
-        if len(parts) < 2:
+    elif cmd == ".morse":
+        if len(args) < 2:
             await event.edit("❌ Usage: `.morse enc <text>` or `.morse dec <morse-code>`")
             return
-        mode, val = parts[0].lower(), parts[1]
+        mode, val = args[0].lower(), " ".join(args[1:])
         res = _morse_transform(val, mode)
         await event.edit(f"📡 **Morse Output:**\n`{res}`")
 
-    elif text.startswith(".ssl"):
-        domain = raw[4:].strip()
+    elif cmd == ".ssl":
+        domain = args[0] if args else ""
         if not domain:
             await event.edit("❌ Usage: `.ssl <domain>`\nExample: `.ssl google.com`")
             return
@@ -3169,8 +3155,8 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _ssl_check, domain)
         await event.edit(res)
 
-    elif text.startswith(".headers"):
-        url = raw[8:].strip()
+    elif cmd == ".headers":
+        url = args[0] if args else ""
         if not url:
             await event.edit("❌ Usage: `.headers <url>`\nExample: `.headers https://cloudflare.com`")
             return
@@ -3179,8 +3165,8 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _http_headers_inspect, url)
         await event.edit(res)
 
-    elif text.startswith(".unshort"):
-        url = raw[8:].strip()
+    elif cmd == ".unshort":
+        url = args[0] if args else ""
         if not url:
             await event.edit("❌ Usage: `.unshort <url>`")
             return
@@ -3190,27 +3176,26 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Failed to unshorten: {e}")
 
-    elif text == ".gas":
+    elif cmd == ".gas":
         await event.edit("⛽ **Checking Ethereum Gas Fees...**")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _eth_gas_tracker)
         await event.edit(res)
 
-    elif text in (".feargreed", ".fng"):
+    elif cmd in (".feargreed", ".fng"):
         await event.edit("📊 **Fetching Crypto Fear & Greed Index...**")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _crypto_fear_greed)
         await event.edit(res)
 
-    elif text == ".marketcap":
+    elif cmd == ".marketcap":
         await event.edit("🌍 **Fetching Global Crypto Market Overview...**")
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _global_crypto_stats)
         await event.edit(res)
 
-    elif text.startswith(".fiat") or text.startswith(".currency"):
-        parts = raw.split()[1:]
-        base = parts[0].upper() if parts else "USD"
+    elif cmd in (".fiat", ".forex"):
+        base = args[0].upper() if args else "USD"
         try:
             r = requests.get(f"https://open.er-api.com/v6/latest/{base}", timeout=8)
             if r.status_code == 200:
@@ -3230,8 +3215,8 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Currency error: {e}")
 
-    elif text.startswith(".stock"):
-        sym = raw[6:].strip().upper() or "AAPL"
+    elif cmd == ".stock":
+        sym = args[0].upper() if args else "AAPL"
         try:
             r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d", headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
             if r.status_code == 200:
@@ -3253,31 +3238,18 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Stock lookup failed: {e}")
 
-    elif text == ".dog":
-        loop = asyncio.get_event_loop()
-        img = await loop.run_in_executor(None, _random_dog_photo)
-        if img:
-            await client.send_file(event.chat_id, img, caption="🐶 **Good Doggo!**")
-            await event.delete()
-        else:
-            await event.edit("❌ Couldn't fetch dog photo right now.")
-
-    elif text == ".cat":
-        await client.send_file(event.chat_id, "https://cataas.com/cat", caption="🐱 **Meow!**")
-        await event.delete()
-
-    elif text == ".slap":
+    elif cmd == ".slap":
         target = "someone"
         if event.is_reply:
             reply = await event.get_reply_message()
             u = await client.get_entity(reply.sender_id)
             target = getattr(u, "first_name", str(reply.sender_id))
-        elif len(raw.split()) > 1:
-            target = raw.split(None, 1)[1]
+        elif args_str:
+            target = args_str
         slaps = ["a large trout", "a mechanical keyboard", "a wet noodle", "a cybersecurity handbook", "a cold pizza slice"]
         await event.edit(f"👋 **{DEV_NAME}** slaps **{target}** with {random.choice(slaps)}! 💥")
 
-    elif text == ".roast":
+    elif cmd == ".roast":
         target = ""
         if event.is_reply:
             reply = await event.get_reply_message()
@@ -3285,7 +3257,7 @@ async def _cmd_dispatch(event):
             target = f"**{getattr(u, 'first_name', 'User')}**, "
         await event.edit(f"🔥 {target}{random.choice(ROASTS_LIST)}")
 
-    elif text == ".compliment":
+    elif cmd == ".compliment":
         target = ""
         if event.is_reply:
             reply = await event.get_reply_message()
@@ -3293,8 +3265,8 @@ async def _cmd_dispatch(event):
             target = f"**{getattr(u, 'first_name', 'Friend')}**, "
         await event.edit(f"💖 {target}{random.choice(COMPLIMENTS_LIST)}")
 
-    elif text.startswith(".dice"):
-        val = raw[5:].strip().lower()
+    elif cmd == ".dice":
+        val = args_str.lower()
         emoji = "🎲"
         if "dart" in val:
             emoji = "🎯"
