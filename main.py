@@ -138,8 +138,8 @@ DEV_GITHUB = "https://github.com/rehuux"
 DEV_SKILLS = "CyberSecurity, Telegram Bot Development, Security/OSINT, Linux, and AI Integration"
 
 # Media Assets
-COMMANDS_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyMXo1bzFoMmtkb3k4dmxtcDM5dWFmNG9sMHBpanI4MmZlNXJyajBjNCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/u2dI2h52gAzNS/giphy.gif"
-DEV_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyd3dzbzJzOHc4OHllYXNwZ2h5cnVjeHZ3Z3pzd2pxeXM3aDY5aG92NCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/jpIidKCY487Rbj0TiV/giphy.gif"
+COMMANDS_GIF_URL = "https://media1.giphy.com/media/v1.Y2lkPTZjMDliOTUyZThjYTgwYXNjZ28weG9pY2ZnbG13dTNiMGhpNHo0Z3E1b3ZodncxdSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/uZVCv8HVKg4n83Xsb7/giphy.gif"
+DEV_GIF_URL = "https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyYTZnejY3OXc5dmI0czNwazRyY2t6ZmluYzB0d2J6YzkxOTEzODQzNiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/Yq1tXTNe5PDdQEhKXG/giphy.gif"
 AFK_GIF_URL = "https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUydDhyZ3dwdmptam8ybTVxMTZvbmRxeXRwbnltczBjdTU5aHZ6bG5pYSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/8bxgTkgQqjQBEobJlW/giphy.gif"
 
 BOT_VERSION = "4.5.0"
@@ -228,9 +228,9 @@ else:
 # ------------------------------------------------------------------
 AFK_RETRIGGER_SECONDS = 6 * 3600
 DEFAULT_AFK_MESSAGE = (
-    "Hello Buddy,\n"
-    "I will be with you shortly (approximately 5–20 minutes).\n"
-    "To help me assist you efficiently, please describe what you are interested in or what services you require."
+    "Hello Buddy, I will be with you shortly\n"
+    "(approximately 5–20 minutes). To help me\n"
+    "assist you efficiently, please describe what you are interested in or what services you require."
 )
 
 class AFKState:
