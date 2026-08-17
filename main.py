@@ -662,7 +662,7 @@ def _ig_info(username: str) -> str:
 def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
     """
     Downloads full-resolution Instagram profile picture and returns (filepath, username, caption).
-    100% free, no login or API key required.
+    100% free, multi-mirror fail-safe, no login or API key required.
     """
     user = username.strip().lstrip("@")
     if "instagram.com/" in user:
@@ -675,7 +675,52 @@ def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
 
     out_file = os.path.join(TEMP_DIR, f"igpfp_{uuid4().hex}.jpg")
 
-    # Strategy 1: Official Instagram Web Profile API (Direct HD CDN URL)
+    # Strategy 1: High-Speed Web Mirror & CDN Extractor (insta-stories-viewer)
+    try:
+        url = f"https://insta-stories-viewer.com/{urllib.parse.quote(user)}/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            html = r.text
+            # Extract high-res proxy image links
+            cdn_links = re.findall(r'(https://cdn\.iqsaved\.com/[^\s\"\'<>]+)', html)
+            if cdn_links:
+                img_url = cdn_links[0]
+                img_resp = requests.get(
+                    img_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Referer": "https://insta-stories-viewer.com/"
+                    },
+                    timeout=10
+                )
+                if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                    with open(out_file, "wb") as f:
+                        f.write(img_resp.content)
+
+                    # Extract stats
+                    stats = re.findall(r'<b>([0-9.,KMBkmb]+)</b>', html)
+                    posts = stats[0] if len(stats) > 0 else "N/A"
+                    followers = stats[1] if len(stats) > 1 else "N/A"
+                    following = stats[2] if len(stats) > 2 else "N/A"
+
+                    caption = (
+                        f"📸 **Instagram Profile Picture:** `@{user}`\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"👥 **Followers:** `{followers}` | **Following:** `{following}`\n"
+                        f"📮 **Posts:** `{posts}`\n"
+                        f"🔗 https://instagram.com/{user}\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    )
+                    return (out_file, user, caption)
+    except Exception:
+        pass
+
+    # Strategy 2: Official Instagram Web Profile API (Direct HD CDN URL)
     try:
         api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={urllib.parse.quote(user)}"
         headers = {
@@ -703,16 +748,18 @@ def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
                             f.write(img_resp.content)
                         caption = (
                             f"📸 **Instagram PFP:** `@{user}`{is_verified}\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"👤 **Name:** `{full_name}`\n"
                             f"👥 **Followers:** `{followers:,}` | **Following:** `{following:,}`\n"
                             f"🔐 **Account:** `{is_priv.strip()}`\n"
-                            f"🔗 https://instagram.com/{user}"
+                            f"🔗 https://instagram.com/{user}\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         )
                         return (out_file, user, caption)
     except Exception:
         pass
 
-    # Strategy 2: Web Scraping Open Meta / OG Image
+    # Strategy 3: Open Meta / OG Image Scraping
     try:
         r_page = requests.get(
             f"https://www.instagram.com/{user}/",
@@ -732,33 +779,6 @@ def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
                         f.write(img_resp.content)
                     caption = f"📸 **Instagram PFP:** `@{user}`\n🔗 https://instagram.com/{user}"
                     return (out_file, user, caption)
-    except Exception:
-        pass
-
-    # Strategy 3: Third-Party Public Mirrors
-    try:
-        mirror_urls = [
-            f"https://api.storiesig.info/api/profile/{user}",
-            f"https://dumpoir.com/v/{user}"
-        ]
-        for m_url in mirror_urls:
-            try:
-                r_m = requests.get(m_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
-                if r_m.status_code == 200:
-                    try:
-                        jd = r_m.json()
-                        pic_url = jd.get("profile_pic_url_hd") or jd.get("profile_pic_url") or jd.get("avatar")
-                        if pic_url:
-                            img_resp = requests.get(pic_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-                            if img_resp.status_code == 200 and len(img_resp.content) > 500:
-                                with open(out_file, "wb") as f:
-                                    f.write(img_resp.content)
-                                caption = f"📸 **Instagram PFP:** `@{user}`\n🔗 https://instagram.com/{user}"
-                                return (out_file, user, caption)
-                    except Exception:
-                        pass
-            except Exception:
-                continue
     except Exception:
         pass
 
@@ -2955,7 +2975,7 @@ async def _cmd_dispatch(event):
                 await client.send_file(
                     event.chat_id,
                     audio_path,
-                    caption=f"🎵 **{title}** — `{artist}`\n⚡ _Sent via SelfBot Music Engine_",
+                    caption=f"🎧 **{title}** — `{artist}`\n⚡ _Powred by @gotweeds_",
                     attributes=[audio_attr]
                 )
                 await event.delete()
