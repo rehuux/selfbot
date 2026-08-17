@@ -659,6 +659,111 @@ def _ig_info(username: str) -> str:
 ✓ **Search:** https://www.google.com/search?q=site:instagram.com/{user}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
 
+def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
+    """
+    Downloads full-resolution Instagram profile picture and returns (filepath, username, caption).
+    100% free, no login or API key required.
+    """
+    user = username.strip().lstrip("@")
+    if "instagram.com/" in user:
+        m = re.search(r'instagram\.com/([a-zA-Z0-9_\.]+)', user)
+        if m:
+            user = m.group(1)
+    user = user.split("/")[0].split("?")[0].strip()
+    if not user:
+        return None
+
+    out_file = os.path.join(TEMP_DIR, f"igpfp_{uuid4().hex}.jpg")
+
+    # Strategy 1: Official Instagram Web Profile API (Direct HD CDN URL)
+    try:
+        api_url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={urllib.parse.quote(user)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            "x-ig-app-id": "936619743392459",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "*/*",
+            "Referer": f"https://www.instagram.com/{user}/"
+        }
+        r = requests.get(api_url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            data = r.json()
+            u_data = data.get("data", {}).get("user")
+            if u_data:
+                pic_url = u_data.get("profile_pic_url_hd") or u_data.get("profile_pic_url")
+                full_name = u_data.get("full_name") or user
+                followers = u_data.get("edge_followed_by", {}).get("count", 0)
+                following = u_data.get("edge_follow", {}).get("count", 0)
+                is_verified = " ✅" if u_data.get("is_verified") else ""
+                is_priv = " 🔒 Private" if u_data.get("is_private") else " 🔓 Public"
+                if pic_url:
+                    img_resp = requests.get(pic_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                    if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                        with open(out_file, "wb") as f:
+                            f.write(img_resp.content)
+                        caption = (
+                            f"📸 **Instagram PFP:** `@{user}`{is_verified}\n"
+                            f"👤 **Name:** `{full_name}`\n"
+                            f"👥 **Followers:** `{followers:,}` | **Following:** `{following:,}`\n"
+                            f"🔐 **Account:** `{is_priv.strip()}`\n"
+                            f"🔗 https://instagram.com/{user}"
+                        )
+                        return (out_file, user, caption)
+    except Exception:
+        pass
+
+    # Strategy 2: Web Scraping Open Meta / OG Image
+    try:
+        r_page = requests.get(
+            f"https://www.instagram.com/{user}/",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9"
+            },
+            timeout=8
+        )
+        if r_page.status_code == 200:
+            og_match = re.search(r'<meta property="og:image" content="([^"]+)"', r_page.text)
+            if og_match:
+                pic_url = og_match.group(1).replace("&amp;", "&")
+                img_resp = requests.get(pic_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                    with open(out_file, "wb") as f:
+                        f.write(img_resp.content)
+                    caption = f"📸 **Instagram PFP:** `@{user}`\n🔗 https://instagram.com/{user}"
+                    return (out_file, user, caption)
+    except Exception:
+        pass
+
+    # Strategy 3: Third-Party Public Mirrors
+    try:
+        mirror_urls = [
+            f"https://api.storiesig.info/api/profile/{user}",
+            f"https://dumpoir.com/v/{user}"
+        ]
+        for m_url in mirror_urls:
+            try:
+                r_m = requests.get(m_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+                if r_m.status_code == 200:
+                    try:
+                        jd = r_m.json()
+                        pic_url = jd.get("profile_pic_url_hd") or jd.get("profile_pic_url") or jd.get("avatar")
+                        if pic_url:
+                            img_resp = requests.get(pic_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 500:
+                                with open(out_file, "wb") as f:
+                                    f.write(img_resp.content)
+                                caption = f"📸 **Instagram PFP:** `@{user}`\n🔗 https://instagram.com/{user}"
+                                return (out_file, user, caption)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return None
+
 def _wikipedia_search(query: str) -> str:
     try:
         r = requests.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(query.replace(' ', '_'))}", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
@@ -1248,118 +1353,41 @@ def _convert_currency(amount, from_cur, to_cur):
         return f"❌ Currency conversion failed: {e}"
     return "❌ Invalid currency code."
 
-def _download_tts(text: str, voice_or_lang: str = "en") -> Optional[str]:
+def _download_tts(text: str, lang: str = "en") -> Optional[str]:
     text = text.strip()
     if not text:
         return None
-
-    # Supported dynamic voice aliases
-    voice_map = {
-        "female": "Amy",
-        "male": "Brian",
-        "guy": "Brian",
-        "boy": "Brian",
-        "girl": "Amy",
-        "india": "Aditi",
-        "hindi": "Aditi",
-        "hi": "Aditi",
-        "british": "Emma",
-        "uk": "Emma",
-        "us": "Joanna",
-        "en": "Amy",
-        "narrator": "Matthew",
-        "news": "Brian",
-        "cute": "Ivy",
-        "warm": "Kendra",
-    }
-    se_voice = voice_map.get(voice_or_lang.lower(), "Amy")
-    if voice_or_lang.lower() in ("hindi", "hi"):
-        se_voice = "Aditi"
-
     out_file = os.path.join(TEMP_DIR, f"tts_{uuid4().hex}.mp3")
 
-    # Strategy 1: StreamElements High-Definition Neural Voice (Amazon Polly Studio Engine)
+    # Standardize language code
+    tl = lang if len(lang) == 2 and lang.isalpha() else ("hi" if lang.lower() in ("hindi", "hi", "in", "india") else "en")
+
+    # Strategy 1: Google Translate Direct Speech Engine (Classic AI Robot Voice)
     try:
-        se_url = f"https://api.streamelements.com/kappa/v2/speech?voice={se_voice}&text={urllib.parse.quote(text[:500])}"
-        r_se = requests.get(
-            se_url,
+        q = urllib.parse.quote(text)
+        url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={tl}&client=tw-ob"
+        r = requests.get(
+            url,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "Referer": "https://streamelements.com/"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://translate.google.com/"
             },
             timeout=10
         )
-        if r_se.status_code == 200 and len(r_se.content) > 100:
+        if r.status_code == 200 and len(r.content) > 50:
             with open(out_file, "wb") as f:
-                f.write(r_se.content)
+                f.write(r.content)
             return out_file
     except Exception:
         pass
 
-    # Strategy 2: Youdao Natural Human Studio Voice (High quality natural pronunciation)
+    # Strategy 2: gTTS Python library fallback
     try:
-        voice_type = "1" if voice_or_lang.lower() in ("uk", "british") else "2"
-        yd_url = f"https://dict.youdao.com/dictvoice?audio={urllib.parse.quote(text[:400])}&type={voice_type}"
-        r_yd = requests.get(
-            yd_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
-            timeout=8
-        )
-        if r_yd.status_code == 200 and len(r_yd.content) > 100:
-            with open(out_file, "wb") as f:
-                f.write(r_yd.content)
+        from gtts import gTTS
+        tts = gTTS(text=text, lang=tl)
+        tts.save(out_file)
+        if os.path.exists(out_file) and os.path.getsize(out_file) > 50:
             return out_file
-    except Exception:
-        pass
-
-    # Strategy 3: TikTok Natural Expressive Voice Synthesizer
-    try:
-        tt_voice = "en_us_006" if voice_or_lang.lower() in ("male", "narrator", "guy") else "en_us_001"
-        if voice_or_lang.lower() in ("female", "cute", "girl"):
-            tt_voice = "en_us_002"
-        tt_url = "https://tiktok-tts.weilnet.workers.dev/api/generation"
-        r_tt = requests.post(
-            tt_url,
-            json={"text": text[:300], "voice": tt_voice},
-            headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
-            timeout=8
-        )
-        if r_tt.status_code == 200:
-            res_data = r_tt.json()
-            if res_data.get("data"):
-                audio_bytes = base64.b64decode(res_data["data"])
-                if len(audio_bytes) > 100:
-                    with open(out_file, "wb") as f:
-                        f.write(audio_bytes)
-                    return out_file
-    except Exception:
-        pass
-
-    # Strategy 4: Google Translate Ultra-Fast Global CDN TTS Fallback
-    try:
-        lang_code = voice_or_lang if len(voice_or_lang) == 2 else ("hi" if voice_or_lang in ("hindi", "hi", "india") else "en")
-        q = urllib.parse.quote(text[:300])
-        google_endpoints = [
-            f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang_code}&client=tw-ob&q={q}",
-            f"https://translate.google.co.in/translate_tts?ie=UTF-8&tl={lang_code}&client=tw-ob&q={q}",
-            f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang_code}&client=gtx&q={q}"
-        ]
-        for g_url in google_endpoints:
-            try:
-                r_g = requests.get(
-                    g_url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                        "Referer": "https://translate.google.com/"
-                    },
-                    timeout=8
-                )
-                if r_g.status_code == 200 and len(r_g.content) > 100:
-                    with open(out_file, "wb") as f:
-                        f.write(r_g.content)
-                    return out_file
-            except Exception:
-                continue
     except Exception:
         pass
 
@@ -2083,7 +2111,7 @@ INSULTS_TECH = [
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
         ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
-        ".insta", ".ig", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
+        ".insta", ".ig", ".igpfp", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
         ".members", ".zombies", ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned",
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
@@ -2466,6 +2494,35 @@ async def _cmd_dispatch(event):
         loop = asyncio.get_event_loop()
         res = await loop.run_in_executor(None, _ig_info, args_str)
         await event.edit(res)
+
+    elif cmd in (".igpfp", ".instapfp", ".pfpig"):
+        if not args_str:
+            await event.edit("❌ **Usage:** `.igpfp <username>`\n_Example:_ `.igpfp cristiano` or `.igpfp rehuux`")
+            return
+        clean_user = args_str.strip().lstrip("@")
+        await event.edit(f"📸 **Fetching HD Profile Picture for @{clean_user}...**")
+        loop = asyncio.get_event_loop()
+        pfp_data = await loop.run_in_executor(None, _download_ig_pfp, clean_user)
+        if pfp_data:
+            img_path, user_name, caption = pfp_data
+            try:
+                await client.send_file(
+                    event.chat_id,
+                    img_path,
+                    caption=caption,
+                    reply_to=event.reply_to_msg_id
+                )
+                await event.delete()
+            except Exception as e:
+                await event.edit(f"❌ Failed to send profile picture: {e}")
+            finally:
+                if os.path.exists(img_path):
+                    try:
+                        os.remove(img_path)
+                    except Exception:
+                        pass
+        else:
+            await event.edit(f"❌ **Could not find or fetch profile picture for:** `@{clean_user}`\nMake sure the username is correct.")
 
     # Moderation
     elif cmd in (".mute", ".ban"):
@@ -3291,35 +3348,33 @@ async def _cmd_dispatch(event):
 
     elif cmd in (".tts", ".voice"):
         content = args_str
-        voice_or_lang = "female"
-        
-        # Check if first word is a supported voice style (male, female, narrator, hindi, british, etc.)
-        valid_voices = {"male", "female", "guy", "amy", "brian", "hindi", "hi", "india", "british", "uk", "us", "narrator", "news", "cute"}
-        
-        if content:
-            first_word = content.split()[0].lower()
-            if first_word in valid_voices or (len(first_word) == 2 and first_word.isalpha()):
-                voice_or_lang = first_word
-                content = content.split(None, 1)[1] if len(content.split()) > 1 else ""
-
+        lang = "en"
         if not content and event.is_reply:
             reply = await event.get_reply_message()
             content = reply.raw_text or reply.message or ""
+        elif content and len(content.split()) > 1 and len(content.split()[0]) == 2 and content.split()[0].isalpha():
+            lang = content.split()[0].lower()
+            content = content.split(None, 1)[1]
+        elif content and content.split()[0].lower() in ("hindi", "hi", "in", "india", "en"):
+            lang = "hi" if content.split()[0].lower() in ("hindi", "hi", "in", "india") else "en"
+            content = content.split(None, 1)[1] if len(content.split()) > 1 else ""
 
         if not content:
-            await event.edit("❌ **Usage:** `.tts [voice/lang] <text>`\n\n🎙 **Voices:** `female`, `male`, `hindi`, `british`, `narrator`, `cute`\n_Example:_ `.tts male Hello there!` or `.tts hindi Namaste dost`")
+            await event.edit("❌ Provide text or reply to a message: `.tts [lang] <text>`\n_Example:_ `.tts hello world` or `.tts hi namaste dost`")
             return
-
-        await event.edit(f"🎙 **Generating Natural Voice Note ({voice_or_lang})...**")
+        await event.edit("🎙 **Generating Voice Note...**")
         loop = asyncio.get_event_loop()
-        audio_path = await loop.run_in_executor(None, _download_tts, content, voice_or_lang)
+        audio_path = await loop.run_in_executor(None, _download_tts, content, lang)
         if audio_path and os.path.exists(audio_path):
             try:
                 await event.delete()
                 await client.send_file(event.chat_id, audio_path, voice_note=True, reply_to=event.reply_to_msg_id)
             finally:
                 if os.path.exists(audio_path):
-                    os.remove(audio_path)
+                    try:
+                        os.remove(audio_path)
+                    except Exception:
+                        pass
         else:
             await event.edit("❌ Failed to generate TTS audio.")
 
