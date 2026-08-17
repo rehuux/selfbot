@@ -1255,82 +1255,111 @@ def _download_tts(text: str, voice_or_lang: str = "en") -> Optional[str]:
 
     # Supported dynamic voice aliases
     voice_map = {
-        "female": "en-US-AriaNeural",
-        "male": "en-US-GuyNeural",
-        "india": "en-IN-NeerjaNeural",
-        "hindi": "hi-IN-SwaraNeural",
-        "hi": "hi-IN-SwaraNeural",
-        "british": "en-GB-SoniaNeural",
-        "uk": "en-GB-SoniaNeural",
-        "us": "en-US-JennyNeural",
-        "en": "en-US-AriaNeural",
-        "narrator": "en-US-ChristopherNeural",
-        "news": "en-US-DavisNeural",
-        "warm": "en-US-JennyNeural",
+        "female": "Amy",
+        "male": "Brian",
+        "guy": "Brian",
+        "boy": "Brian",
+        "girl": "Amy",
+        "india": "Aditi",
+        "hindi": "Aditi",
+        "hi": "Aditi",
+        "british": "Emma",
+        "uk": "Emma",
+        "us": "Joanna",
+        "en": "Amy",
+        "narrator": "Matthew",
+        "news": "Brian",
+        "cute": "Ivy",
+        "warm": "Kendra",
     }
-    selected_voice = voice_map.get(voice_or_lang.lower(), voice_or_lang)
+    se_voice = voice_map.get(voice_or_lang.lower(), "Amy")
+    if voice_or_lang.lower() in ("hindi", "hi"):
+        se_voice = "Aditi"
 
     out_file = os.path.join(TEMP_DIR, f"tts_{uuid4().hex}.mp3")
 
-    # Strategy 1: Ultra-natural Microsoft Edge Neural TTS (Free, Studio-Grade)
+    # Strategy 1: StreamElements High-Definition Neural Voice (Amazon Polly Studio Engine)
     try:
-        # Edge TTS raw websocket synthesis over Microsoft public cognitive endpoints
-        # Voice list e.g. en-US-AriaNeural, en-IN-NeerjaNeural, hi-IN-SwaraNeural
-        target_voice = selected_voice if "Neural" in selected_voice else "en-US-AriaNeural"
-        if selected_voice in ("hi", "hindi"):
-            target_voice = "hi-IN-SwaraNeural"
-        elif selected_voice in ("in", "india"):
-            target_voice = "en-IN-NeerjaNeural"
-
-        url = f"https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
-        # Try StreamElements Brian/Amy studio human-like engine (Popular streamer voice, 100% natural & free)
-        se_voice = "Brian" if voice_or_lang.lower() in ("male", "guy", "news") else "Amy"
-        if voice_or_lang.lower() in ("hi", "hindi"):
-            se_voice = "Aditi"
-        se_url = f"https://api.streamelements.com/kappa/v2/speech?voice={se_voice}&text={urllib.parse.quote(text[:400])}"
-        r_se = requests.get(se_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
-        if r_se.status_code == 200 and len(r_se.content) > 1000:
+        se_url = f"https://api.streamelements.com/kappa/v2/speech?voice={se_voice}&text={urllib.parse.quote(text[:500])}"
+        r_se = requests.get(
+            se_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer": "https://streamelements.com/"
+            },
+            timeout=10
+        )
+        if r_se.status_code == 200 and len(r_se.content) > 100:
             with open(out_file, "wb") as f:
                 f.write(r_se.content)
             return out_file
     except Exception:
         pass
 
-    # Strategy 2: TikTok Natural Viral Voice Synthesizer (Studio Quality & Expressive)
+    # Strategy 2: Youdao Natural Human Studio Voice (High quality natural pronunciation)
     try:
-        tt_voice = "en_us_006" if voice_or_lang.lower() in ("male", "narrator") else "en_us_001"
-        if voice_or_lang.lower() in ("female", "cute"):
+        voice_type = "1" if voice_or_lang.lower() in ("uk", "british") else "2"
+        yd_url = f"https://dict.youdao.com/dictvoice?audio={urllib.parse.quote(text[:400])}&type={voice_type}"
+        r_yd = requests.get(
+            yd_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=8
+        )
+        if r_yd.status_code == 200 and len(r_yd.content) > 100:
+            with open(out_file, "wb") as f:
+                f.write(r_yd.content)
+            return out_file
+    except Exception:
+        pass
+
+    # Strategy 3: TikTok Natural Expressive Voice Synthesizer
+    try:
+        tt_voice = "en_us_006" if voice_or_lang.lower() in ("male", "narrator", "guy") else "en_us_001"
+        if voice_or_lang.lower() in ("female", "cute", "girl"):
             tt_voice = "en_us_002"
         tt_url = "https://tiktok-tts.weilnet.workers.dev/api/generation"
         r_tt = requests.post(
             tt_url,
             json={"text": text[:300], "voice": tt_voice},
             headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
-            timeout=10
+            timeout=8
         )
         if r_tt.status_code == 200:
             res_data = r_tt.json()
             if res_data.get("data"):
                 audio_bytes = base64.b64decode(res_data["data"])
-                with open(out_file, "wb") as f:
-                    f.write(audio_bytes)
-                return out_file
+                if len(audio_bytes) > 100:
+                    with open(out_file, "wb") as f:
+                        f.write(audio_bytes)
+                    return out_file
     except Exception:
         pass
 
-    # Strategy 3: Google Translate High-Def Voice Fallback
+    # Strategy 4: Google Translate Ultra-Fast Global CDN TTS Fallback
     try:
-        lang_code = voice_or_lang if len(voice_or_lang) == 2 else ("hi" if voice_or_lang in ("hindi", "hi") else "en")
-        q = urllib.parse.quote(text[:350])
-        g_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={lang_code}&total=1&idx=0&textlen={len(text)}&client=tw-ob&prev=input"
-        r_g = requests.get(g_url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "http://translate.google.com/"
-        }, timeout=10)
-        if r_g.status_code == 200 and len(r_g.content) > 500:
-            with open(out_file, "wb") as f:
-                f.write(r_g.content)
-            return out_file
+        lang_code = voice_or_lang if len(voice_or_lang) == 2 else ("hi" if voice_or_lang in ("hindi", "hi", "india") else "en")
+        q = urllib.parse.quote(text[:300])
+        google_endpoints = [
+            f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang_code}&client=tw-ob&q={q}",
+            f"https://translate.google.co.in/translate_tts?ie=UTF-8&tl={lang_code}&client=tw-ob&q={q}",
+            f"https://translate.google.com/translate_tts?ie=UTF-8&tl={lang_code}&client=gtx&q={q}"
+        ]
+        for g_url in google_endpoints:
+            try:
+                r_g = requests.get(
+                    g_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                        "Referer": "https://translate.google.com/"
+                    },
+                    timeout=8
+                )
+                if r_g.status_code == 200 and len(r_g.content) > 100:
+                    with open(out_file, "wb") as f:
+                        f.write(r_g.content)
+                    return out_file
+            except Exception:
+                continue
     except Exception:
         pass
 
