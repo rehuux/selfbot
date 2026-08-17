@@ -588,6 +588,121 @@ def _github_info(username):
     except Exception as e:
         return f"❌ GitHub lookup failed: {e}"
 
+def _ig_info(username: str) -> str:
+    user = username.strip().lstrip("@").split("/")[0].split("?")[0]
+    if not user:
+        return "❌ Please provide a valid Instagram username."
+
+    # Strategy 1: Free Open Instagram Graph Scraper API
+    try:
+        r = requests.get(f"https://www.instagram.com/api/v1/users/web_profile_info/?username={user}", headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "x-ig-app-id": "936619743392459",
+            "Accept-Language": "en-US,en;q=0.9",
+        }, timeout=8)
+        if r.status_code == 200:
+            data = r.json().get("data", {}).get("user", {})
+            if data:
+                fn = data.get("full_name") or "N/A"
+                bio = (data.get("biography") or "None").replace("\n", " ")
+                followers = data.get("edge_followed_by", {}).get("count", 0)
+                following = data.get("edge_follow", {}).get("count", 0)
+                posts = data.get("edge_owner_to_timeline_media", {}).get("count", 0)
+                is_priv = "🔒 Private" if data.get("is_private") else "🔓 Public"
+                is_ver = "✅ Verified" if data.get("is_verified") else "❌ No"
+                ext_url = data.get("external_url") or "None"
+                return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+📸 **Instagram Profile — @{user}**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Full Name:** `{fn}`
+✓ **Privacy:** `{is_priv}`
+✓ **Verified:** `{is_ver}`
+✓ **Followers:** `{followers:,}`
+✓ **Following:** `{following:,}`
+✓ **Posts:** `{posts:,}`
+✓ **Bio:** `{bio[:150]}`
+✓ **Link:** `{ext_url}`
+✓ **Profile:** https://instagram.com/{user}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception:
+        pass
+
+    # Strategy 2: Fast Public Meta Endpoint / Fallback parser
+    try:
+        r = requests.get(f"https://www.instagram.com/{user}/", headers={
+            "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+            "Accept-Language": "en-US,en;q=0.9"
+        }, timeout=8)
+        if r.status_code == 200:
+            m = re.search(r'<meta property="og:description" content="([^"]+)"', r.text)
+            title_m = re.search(r'<meta property="og:title" content="([^"]+)"', r.text)
+            if m:
+                desc = m.group(1)
+                # Format: "X Followers, Y Following, Z Posts - See Instagram photos and videos from..."
+                meta_parts = desc.split(" - ")[0] if " - " in desc else desc
+                title = title_m.group(1) if title_m else f"@{user}"
+                return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+📸 **Instagram Profile — @{user}**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Title:** `{title}`
+✓ **Stats:** `{meta_parts}`
+✓ **Profile Link:** https://instagram.com/{user}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception:
+        pass
+
+    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+📸 **Instagram Profile — @{user}**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Status:** `Active Profile`
+✓ **Direct URL:** https://instagram.com/{user}
+✓ **Search:** https://www.google.com/search?q=site:instagram.com/{user}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+def _wikipedia_search(query: str) -> str:
+    try:
+        r = requests.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(query.replace(' ', '_'))}", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            title = d.get("title", query)
+            extract = d.get("extract", "No extract available.")
+            url = d.get("content_urls", {}).get("desktop", {}).get("page", f"https://en.wikipedia.org/wiki/{query}")
+            return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 **Wikipedia — {title}**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+{extract[:600]}...
+
+🔗 **Read More:** {url}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        return f"❌ Wikipedia lookup failed: {e}"
+    return f"❌ No Wikipedia page found for '{query}'."
+
+def _unsplash_photo(query: str) -> Optional[str]:
+    try:
+        q = urllib.parse.quote(query)
+        return f"https://source.unsplash.com/featured/1200x800/?{q}"
+    except Exception:
+        return None
+
+def _lyrics_search(song: str) -> str:
+    try:
+        r = requests.get(f"https://lrclib.net/api/search?q={urllib.parse.quote(song)}", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if r.status_code == 200:
+            arr = r.json()
+            if arr and isinstance(arr, list):
+                item = arr[0]
+                lyrics = item.get("plainLyrics") or item.get("syncedLyrics") or ""
+                if lyrics:
+                    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎵 **Lyrics: {item.get('trackName')} — {item.get('artistName')}**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+{lyrics[:1800]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+    except Exception as e:
+        return f"❌ Lyrics search failed: {e}"
+    return f"❌ Lyrics not found for '{song}'."
+
 def _short_url(url):
     try:
         r = requests.get("https://is.gd/create.php", params={"format": "simple", "url": url}, timeout=10)
@@ -943,6 +1058,51 @@ def _decode_qr(image_path):
     except Exception as e:
         return f"❌ QR decode failed: {e}"
     return "❌ QR decode failed."
+
+def _extract_text_ocr(image_path: str) -> str:
+    # 1. Try local pytesseract if binary is available
+    if TESSERACT_OK:
+        try:
+            txt = pytesseract.image_to_string(Image.open(image_path)).strip()
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+    # 2. Try easyocr if installed
+    if EASYOCR_OK:
+        try:
+            reader = easyocr.Reader(['en'], gpu=False)
+            results = reader.readtext(image_path, detail=0)
+            txt = "\n".join(results).strip()
+            if txt:
+                return txt
+        except Exception:
+            pass
+
+    # 3. Fallback to free Online OCR Cloud API (ocr.space)
+    try:
+        with open(image_path, "rb") as f:
+            r = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"filename": f},
+                data={"apikey": "helloworld", "language": "eng", "isOverlayRequired": False},
+                timeout=25
+            )
+        if r.status_code == 200:
+            res = r.json()
+            parsed_results = res.get("ParsedResults", [])
+            if parsed_results:
+                txt = parsed_results[0].get("ParsedText", "").strip()
+                if txt:
+                    return txt
+            err = res.get("ErrorMessage", "")
+            if err:
+                return f"❌ OCR API error: {err}"
+    except Exception as e:
+        return f"❌ OCR processing failed: {e}"
+
+    return "❌ No readable text found in image."
 
 def _generate_hashes(text):
     data = text.encode("utf-8")
@@ -1684,9 +1844,9 @@ INSULTS_TECH = [
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
         ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
-        ".repo", ".time", ".worldtime", ".admins", ".bots", ".members", ".zombies",
-        ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned", ".title",
-        ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
+        ".insta", ".ig", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
+        ".members", ".zombies", ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned",
+        ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
     "🛡 Security & OSINT": [
         ".scan", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
@@ -1698,8 +1858,8 @@ HELP_CATEGORIES = {
         ".paste", ".tts", ".voice", ".remind", ".unit", ".convert", ".json", ".note",
         ".notes", ".calc", ".weather", ".tr", ".translate", ".qr", ".scanqr",
         ".crypto", ".define", ".github", ".short", ".schedule", ".portfolio",
-        ".currency", ".wiki", ".timer", ".todo", ".wordcount", ".epoch", ".age",
-        ".daysuntil", ".randnum", ".pick", ".color", ".lorem"
+        ".currency", ".wiki", ".lyrics", ".pic", ".timer", ".todo", ".wordcount",
+        ".epoch", ".age", ".daysuntil", ".randnum", ".pick", ".color", ".lorem"
     ],
     "👤 User & Stealth": [
         ".afk", ".back", ".unafk", ".status", ".me", ".myusername", ".ghost",
@@ -2059,9 +2219,9 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ {e}")
 
-    elif cmd in (".insta", ".iginfo"):
+    elif cmd in (".insta", ".ig", ".instagram", ".iginfo"):
         if not args_str:
-            await event.edit("❌ Usage: `.insta @username`")
+            await event.edit("❌ Usage: `.insta @username` or `.ig @username`")
             return
         await event.edit(f"🔍 Fetching @{args_str.lstrip('@')}...")
         loop = asyncio.get_event_loop()
@@ -2469,6 +2629,33 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _github_info, user)
         await event.edit(res)
 
+    elif cmd in (".wiki", ".wikipedia"):
+        if not args_str:
+            await event.edit("❌ Usage: `.wiki <query>`\nExample: `.wiki Alan Turing`")
+            return
+        await event.edit(f"🔍 Searching Wikipedia for `{args_str}`...")
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, _wikipedia_search, args_str)
+        await event.edit(res)
+
+    elif cmd in (".lyrics", ".song"):
+        if not args_str:
+            await event.edit("❌ Usage: `.lyrics <song name>`\nExample: `.lyrics Starboy The Weeknd`")
+            return
+        await event.edit(f"🎵 Searching lyrics for `{args_str}`...")
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, _lyrics_search, args_str)
+        await event.edit(res)
+
+    elif cmd in (".pic", ".photo", ".image", ".wallpaper"):
+        query = args_str or "nature"
+        img_url = f"https://source.unsplash.com/featured/1200x800/?{urllib.parse.quote(query)}"
+        try:
+            await client.send_file(event.chat_id, img_url, caption=f"📸 **Image:** `{query}`")
+            await event.delete()
+        except Exception:
+            await event.edit(f"📸 **High-Res Photo Link:**\nhttps://unsplash.com/s/photos/{urllib.parse.quote(query)}")
+
     elif cmd == ".short":
         if not args_str:
             await event.edit("❌ Usage: `.short <url>`")
@@ -2652,18 +2839,21 @@ async def _cmd_dispatch(event):
 
     elif cmd == ".ocr":
         if not event.is_reply:
-            await event.edit("❌ Reply to an image.")
+            await event.edit("❌ Reply to an image with `.ocr`.")
             return
         reply = await event.get_reply_message()
-        img_path = os.path.join(TEMP_DIR, f"{uuid4().hex}.jpg")
+        if not reply.media:
+            await event.edit("❌ Replied message does not contain media/image.")
+            return
+        await event.edit("🔍 **Extracting text from image...**")
+        img_path = os.path.join(TEMP_DIR, f"ocr_{uuid4().hex}.jpg")
         try:
             await client.download_media(reply, file=img_path)
-            # Simple fallback OCR
-            if TESSERACT_OK:
-                txt = pytesseract.image_to_string(Image.open(img_path))
-                await event.edit(f"📝 **Extracted Text:**\n`{txt}`")
-            else:
-                await event.edit("❌ Tesseract OCR not installed.")
+            loop = asyncio.get_event_loop()
+            txt = await loop.run_in_executor(None, _extract_text_ocr, img_path)
+            await event.edit(f"📝 **Extracted OCR Text:**\n\n{txt}")
+        except Exception as e:
+            await event.edit(f"❌ OCR extraction failed: {e}")
         finally:
             if os.path.exists(img_path):
                 os.remove(img_path)
