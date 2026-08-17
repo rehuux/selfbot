@@ -2975,7 +2975,7 @@ async def _cmd_dispatch(event):
                 await client.send_file(
                     event.chat_id,
                     audio_path,
-                    caption=f"🎧 **{title}** — `{artist}`\n⚡ _Powred by @gotweeds _",
+                    caption=f"🎧 **{title}** — `{artist}`\n⚡ Powred by @gotweeds",
                     attributes=[audio_attr]
                 )
                 await event.delete()
