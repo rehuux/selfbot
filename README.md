@@ -1,8 +1,8 @@
 # 🤖 Telegram SelfBot by Syed Rehan
 
-A production-ready Telegram **userbot (selfbot)** built with [Telethon](https://github.com/LonamiWebs/Telethon) — full moderation toolkit, broadcast system, OSINT lookups, a smart **AFK auto-reply system**, and one-click deployment on [Render](https://render.com) using a native **Telethon StringSession** (no SQLite file headaches, no interactive login after first setup).
+A production-ready, ultra-fast Telegram **userbot (selfbot)** built with [Telethon](https://github.com/LonamiWebs/Telethon) — featuring **200+ commands**, full moderation toolkit, OSINT & security utilities, smart **AFK auto-reply engine**, media/music downloaders, Instagram HD PFP downloader (`.igpfp`), text-to-speech voice notes (`.tts`), crypto market tracking, broadcast system, and 24/7 one-click cloud deployment on [Render](https://render.com) using native **Telethon StringSession** (zero SQLite corruption, zero interactive prompts).
 
-> Personal automation for your own Telegram account — moderation, broadcasting, info lookups, and an AFK auto-responder, running 24/7 in the cloud.
+> Personal automation for your Telegram account — moderation, OSINT, broadcasting, AI speech, info lookups, and an intelligent AFK auto-responder running 24/7 in the cloud.
 
 ---
 
@@ -11,7 +11,7 @@ A production-ready Telegram **userbot (selfbot)** built with [Telethon](https://
 - [What This Project Is](#-what-this-project-is)
 - [How It Works](#-how-it-works)
 - [Architecture Overview](#-architecture-overview)
-- [Features](#-features)
+- [✨ Key Features](#-key-features)
 - [Project Structure](#-project-structure)
 - [Requirements](#-requirements)
 - [Getting Telegram API Credentials](#-getting-telegram-api-credentials)
@@ -19,20 +19,27 @@ A production-ready Telegram **userbot (selfbot)** built with [Telethon](https://
 - [Local Setup](#-local-setup)
 - [Deploying on Render](#-deploying-on-render)
 - [Environment Variables](#-environment-variables)
-- [Command Reference](#-command-reference)
-- [AFK System — In Depth](#-afk-system--in-depth)
-- [Moderation System — In Depth](#-moderation-system--in-depth)
-- [Broadcast System — In Depth](#-broadcast-system--in-depth)
-- [Reliability, Auto-Fix & Crash Recovery](#-reliability-auto-fix--crash-recovery)
-- [Health Server & Uptime](#-health-server--uptime)
-- [Security Notes](#-security-notes)
-- [Frequently Asked Questions](#-frequently-asked-questions)
-- [Troubleshooting](#-troubleshooting)
-- [Roadmap](#-roadmap)
-- [Changelog](#-changelog)
-- [License](#-license)
-- [Disclaimer](#-disclaimer)
-- [Credits](#-credits)
+- [📖 Full Command Reference (200+ Commands)](#-full-command-reference-200-commands)
+  - [1. 🤖 Info & Telegram](#1--info--telegram)
+  - [2. 🛡 Security & OSINT](#2--security--osint)
+  - [3. 🛠 Productivity & Utilities](#3--productivity--utilities)
+  - [4. 👤 User & Stealth](#4--user--stealth)
+  - [5. 🧩 Moderation](#5--moderation)
+  - [6. 📡 Broadcast & Messaging](#6--broadcast--messaging)
+  - [7. 🎨 Text & Font Styles](#7--text--font-styles)
+  - [8. 🎉 Fun & Games](#8--fun--games)
+  - [9. 💰 Crypto & Financial Markets](#9--crypto--financial-markets)
+  - [10. ⚙️ System & Diagnostics](#10-️-system--diagnostics)
+- [🌙 AFK System — In Depth](#-afk-system--in-depth)
+- [🛡 Moderation System — In Depth](#-moderation-system--in-depth)
+- [📡 Broadcast System — In Depth](#-broadcast-system--in-depth)
+- [🛠 Reliability, Auto-Fix & Crash Recovery](#-reliability-auto-fix--crash-recovery)
+- [🩺 Health Server & Uptime](#-health-server--uptime)
+- [❓ Frequently Asked Questions](#-frequently-asked-questions)
+- [🩹 Troubleshooting](#-troubleshooting)
+- [📄 License](#-license)
+- [⚠️ Disclaimer](#-disclaimer)
+- [👤 Credits](#-credits)
 
 ---
 
@@ -40,29 +47,31 @@ A production-ready Telegram **userbot (selfbot)** built with [Telethon](https://
 
 This is a **selfbot** — it runs on your **own personal Telegram account** (not a Bot API bot with a `@BotFather` token). It logs in as *you*, using Telethon's MTProto client library, and listens for special `.command` messages that you type from your own account.
 
-Unlike a regular Telegram Bot (which has its own identity, limited permissions, and can't read normal DMs unless messaged first), a selfbot has the **full capabilities of a user account** — it can read all your chats, act in any group you're in, message anyone, and more. This makes it powerful, but also means it must be used carefully and responsibly (see [Disclaimer](#-disclaimer)).
+Unlike a regular Telegram Bot (which has its own identity, limited permissions, and cannot read normal DMs unless messaged first), a selfbot has the **full capabilities of a user account** — it can read all your chats, act in any group you're in, message anyone, and execute complex workflows on your behalf.
 
-It's designed for people who want to:
-- Auto-reply to messages when they're away (AFK)
-- Moderate their own groups more efficiently (mute/ban/kick/promote via commands)
-- Broadcast announcements across their DMs/groups
-- Quickly look up user/chat/Instagram info without leaving Telegram
-- Run all of this as a **24/7 hosted service** instead of keeping a laptop/phone script running
+It is designed for people who want to:
+- Auto-reply to messages when away with smart duration tracking (**AFK**)
+- Download Instagram Full HD Profile Pictures (`.igpfp`) without logging in
+- Convert text or replied messages to AI voice notes instantly (`.tts`)
+- Moderate groups efficiently (mute/ban/kick/warn/clean via commands)
+- Perform OSINT lookups (IP, WHOIS, DNS, Subdomains, SSL certificates, CVEs)
+- Broadcast announcements safely across DMs and groups with anti-flood pacing
+- Track real-time crypto prices, gas fees, and market cap metrics
+- Run all of this as a **24/7 hosted service** on Render, Railway, VPS, or local machine
 
 ---
 
 ## ⚙️ How It Works
 
-1. **Login / Session** — The bot authenticates to Telegram using a Telethon **StringSession**: a single encrypted string representing an already-authorized login. Generated once, locally, via `generate_session.py`, then stored as the `SESSION_STRING` environment variable on Render. No phone/OTP prompt ever happens on the server.
-2. **Persistent Connection** — Telethon opens and maintains a persistent MTProto connection to Telegram's servers, receiving real-time updates instead of polling.
-3. **Event Listening** — The bot listens for two categories of events:
-   - **Outgoing messages** starting with `.` → parsed as commands (`.mute`, `.frwd`, `.afk`, etc.)
-   - **Incoming messages** → checked against the moderation list (muted/banned users) and evaluated for AFK auto-reply
-4. **Command Dispatch** — Every `.command` flows through a single dispatcher (`_cmd_dispatch`) that identifies the command, executes the matching handler, edits your own message in place with the result, and logs any failures.
-5. **AFK State Machine** — A lightweight in-memory object (`AFKState`) tracks whether AFK is on, the timestamp it was enabled, your custom away message, and which user IDs have already received an auto-reply this session.
-6. **Health Server** — An `aiohttp` web server runs alongside the bot on Render's assigned `PORT`, responding to `/` and `/health` so Render's health checks keep the service alive and marked "healthy."
-7. **Crash Recovery Loop** — The entire client run-loop lives inside a `main()` function with exponential backoff — if something fatal happens, the error is logged and the client restarts automatically (5s → 10s → 20s → ... capped at 60s) instead of the whole service dying permanently.
-8. **Graceful Session Failure** — If `SESSION_STRING` is invalid, malformed, or has been revoked from Telegram's side, the bot logs a clear, actionable message and exits cleanly instead of endlessly crash-looping.
+1. **Authentication via StringSession** — The bot connects to Telegram using a native Telethon **StringSession**: an encrypted token representing an authorized login. Generated once via `generate_session.py`, stored as the `SESSION_STRING` environment variable.
+2. **Persistent Connection** — Telethon maintains a persistent MTProto socket connection to Telegram's servers for low-latency event delivery.
+3. **Dual Event Handling**:
+   - **Outgoing messages** starting with `.` → parsed as commands (`.igpfp`, `.tts`, `.mute`, `.afk`, etc.)
+   - **Incoming messages** → checked against moderation rules (muted/banned users) and evaluated for AFK auto-replies.
+4. **Self-Healing Command Dispatcher** — Commands execute via `_cmd_dispatch` which edits your message in place with rich Markdown results and handles retries / logging.
+5. **Multi-Threaded / Async Execution** — Heavy tasks (TTS generation, OSINT scrapers, image processing, downloads) run in non-blocking thread executors (`run_in_executor`).
+6. **Health Server** — An internal `aiohttp` HTTP server runs on the assigned `PORT`, serving `/` and `/health` so cloud health checks keep the bot running 24/7.
+7. **Crash Recovery Loop** — A resilient wrapper with exponential backoff automatically restarts the client on network or server disruptions.
 
 ---
 
@@ -76,47 +85,43 @@ It's designed for people who want to:
                                         │ persistent connection
                                         ▼
                         ┌─────────────────────────────┐
-                        │         Telethon Client       │
-                        │   (StringSession-authorized)   │
+                        │       Telethon Client        │
+                        │   (StringSession-authorized) │
                         └───────────────┬───────────────┘
                     ┌───────────────────┼───────────────────┐
                     ▼                   ▼                   ▼
           ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-          │ Outgoing Handler │ │ Incoming Handler │ │   Health Server  │
-          │  (.command logic)│ │ (mod + AFK logic)│ │  (aiohttp /PORT) │
+          │ Outgoing Handler │ │ Incoming Handler │ │  Health Server   │
+          │  (200+ commands) │ │ (mod + AFK logic)│ │  (aiohttp /PORT) │
           └─────────────────┘ └─────────────────┘ └─────────────────┘
                     │                   │
                     ▼                   ▼
           ┌─────────────────┐ ┌─────────────────┐
-          │  Command Modules │ │   AFK State      │
-          │ mod / broadcast /│ │ (in-memory, per  │
-          │ info / utility   │ │  process runtime)│
+          │  Engine Modules  │ │   AFK State     │
+          │ OSINT/Media/TTS/│ │ (in-memory, per │
+          │ Mod/Broadcast   │ │  process runtime)│
           └─────────────────┘ └─────────────────┘
                     │
                     ▼
           ┌─────────────────┐
-          │ selfbot_data.json│  ← persists muted/banned user lists
-          │   errors.log      │  ← persists auto-fix error history
+          │ selfbot_data.json│  ← persists muted/banned user & group lists
+          │   errors.log     │  ← persists auto-fix error logs
           └─────────────────┘
 ```
 
-The whole process runs as a single long-lived Python asyncio event loop, deployed as a Render **Web Service** so the health endpoint keeps it alive and monitored.
-
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- **Full moderation toolkit** — mute, ban, block, kick, promote/demote admins
-- **Broadcast system** — forward or send messages across DMs and groups with built-in anti-ban delays
-- **AFK auto-reply system** — DM-only, replies once per user, auto-disables when you send a manual message
-- **OSINT / info lookups** — Telegram user info, chat info, Instagram profile lookups
-- **Utility commands** — translator, calculator, countdown timer, ghost-send, auto chat cleanup
-- **Self-healing** — auto-fix mode retries failed commands and logs errors
-- **StringSession-based auth** — no SQLite file corruption issues, no interactive login on the server
-- **Render-ready** — environment-variable driven config, health-check endpoint, crash-safe restart loop
-- **Local dev fallback** — automatically uses a local SQLite session file if no `SESSION_STRING` is set
-- **Persistent moderation data** — muted/banned lists survive restarts via `selfbot_data.json`
-- **Error logging** — every failure is timestamped and traceback-logged to `errors.log`, viewable in-chat via `.fixlog`
+- 📸 **Instagram Profile Downloader (`.igpfp`)** — Fetches full HD profile pictures and account stats without login or API keys.
+- 🎙 **AI Text-To-Speech (`.tts`)** — Converts text or replied messages into voice notes with multi-language support (`en`, `hi`, etc.).
+- 🛡 **Security & OSINT Hub** — Real-time IP intelligence, WHOIS, DNS queries, Subdomain enumeration, SSL inspection, CVE lookups, Base64/Hash/Hex tools.
+- 🌙 **Smart AFK Engine** — DM-only auto-responder, replies once per user, duration counters, auto-deactivates on outgoing message.
+- 🧩 **Advanced Group Moderation** — Mute, Ban, Softban, Kick, Promote/Demote, Timed Mute/Ban, Warn system, and Batch Message Purges.
+- 📡 **Anti-Flood Broadcast System** — Forward or send messages across all DMs/groups with randomized delays and rate-limit protection.
+- 💰 **Crypto & Finance Tools** — Real-time prices (`.btc`, `.eth`, `.sol`), Fear & Greed index, gas fees, fiat rates, portfolio valuation.
+- 🎨 **Text Styling & Font Generator** — Over 20 aesthetic Unicode fonts, text flips, vaporwave, leet-speak, and spoilers.
+- 🛠 **24/7 Cloud Resilience** — Native Telethon StringSession, automatic crash recovery, health endpoint for Render/Railway/VPS.
 
 ---
 
@@ -124,363 +129,454 @@ The whole process runs as a single long-lived Python asyncio event loop, deploye
 
 ```
 selfbot/
-├── main.py                # Core bot logic — all commands, AFK system, event handlers, session logic
-├── generate_session.py    # One-time local script to produce a Telethon StringSession
+├── main.py                # Core selfbot logic — 200+ commands, AFK engine, handlers
+├── generate_session.py    # Local script to produce a Telethon StringSession
 ├── requirements.txt       # Python dependencies
-├── render.yaml             # Render Blueprint service definition
-├── Procfile                 # Fallback start command for PaaS platforms
-├── runtime.txt                # Pins the Python version
-├── .gitignore                   # Keeps session files & secrets out of git
-├── LICENSE                        # Custom attribution license (copy/edit allowed, credit required)
-└── README.md                        # This file
+├── render.yaml            # Render Blueprint service definition
+├── Procfile               # PaaS start command definition
+├── runtime.txt            # Python runtime version pin
+├── .gitignore             # Excludes session files & secrets from git
+├── LICENSE                # Custom attribution license (credit required)
+└── README.md              # Project documentation
 ```
 
 ---
 
 ## ✅ Requirements
 
-- Python **3.11+**
-- Telethon **1.36+** (fully compatible with 1.44+)
-- A Telegram account (the one the selfbot will run as)
-- Telegram API credentials (`API_ID`, `API_HASH`)
-- A [Render](https://render.com) account (free tier works)
-- A GitHub repository to connect to Render
+- Python **3.10+** (Python 3.11 recommended)
+- Telegram account (API credentials from [my.telegram.org](https://my.telegram.org))
+- A free account on [Render](https://render.com) (or any VPS/PaaS)
 
 ---
 
 ## 🔑 Getting Telegram API Credentials
 
-1. Go to **https://my.telegram.org**
-2. Log in with your phone number
-3. Open **API Development Tools**
-4. Create an app (any name/description works)
-5. Copy the **`api_id`** and **`api_hash`** shown — you'll need both
+1. Go to **https://my.telegram.org** and sign in with your phone number.
+2. Navigate to **API Development Tools**.
+3. Create a new application (enter any name and short title).
+4. Copy your **`api_id`** (numeric) and **`api_hash`** (hex string).
 
 ---
 
 ## 🧩 Generating a StringSession
 
-The bot uses a native **Telethon StringSession** — a single string that represents a fully authorized login. This replaces the older Base64-encoded SQLite `.session` file approach (which caused `sqlite3.DatabaseError: file is not a database` errors on Render).
-
-Generate it **once, locally** — never on Render:
+Generate your session **once locally** on your computer:
 
 ```bash
 pip install telethon
 python generate_session.py
 ```
 
-You will be prompted for:
-- `API_ID`
-- `API_HASH`
-- Your phone number + the OTP Telegram sends you
-
-At the end, a long string is printed — this is your `SESSION_STRING`. Copy and store it securely; it grants full access to your Telegram account, just like a password.
-
-> ⚠️ If you generated a session with an *older* version of this project (Base64 SQLite format), it is **not compatible** anymore. Re-run `generate_session.py` to get a proper StringSession.
+Follow the terminal prompts (API ID, API Hash, Phone Number with country code, and OTP code).
+Copy the resulting `SESSION_STRING` string securely.
 
 ---
 
 ## 💻 Local Setup
 
 ```bash
+# Clone the repository
 git clone https://github.com/rehuux/selfbot.git
 cd selfbot
+
+# Install requirements
 pip install -r requirements.txt
 
-# Set environment variables (Linux/macOS)
-export API_ID=your_api_id
-export API_HASH=your_api_hash
-export SESSION_STRING=your_generated_string_session
+# Set Environment Variables (Linux/macOS)
+export API_ID="your_api_id"
+export API_HASH="your_api_hash"
+export SESSION_STRING="your_generated_session_string"
 
 # Or on Windows (PowerShell)
 $env:API_ID="your_api_id"
 $env:API_HASH="your_api_hash"
-$env:SESSION_STRING="your_generated_string_session"
+$env:SESSION_STRING="your_generated_session_string"
 
+# Run the selfbot
 python main.py
 ```
-
-If `SESSION_STRING` is **not** set, the bot automatically falls back to a local SQLite session file (`selfbot_session.session`) and will prompt for phone/OTP login interactively — useful for local development without generating a StringSession every time.
-
-On successful startup you'll see:
-
-```
-Loaded Telethon StringSession from environment.
-Logged in as: YourName (@yourusername) | ID: xxxxxxxx
-SelfBot by Syed Rehan — running
-Type .help in Telegram for the full command list
-Health server running on port 8080
-```
-
-(or `Using local SQLite session file.` if running without `SESSION_STRING`)
 
 ---
 
 ## ☁️ Deploying on Render
 
-### Option A — Blueprint (recommended, fastest)
-
-1. Push your project to a GitHub repository (see structure above)
-2. Log in to [Render](https://render.com) with GitHub
-3. Click **New +** → **Blueprint**
-4. Select your repository — Render automatically detects `render.yaml`
-5. Fill in the requested environment variables:
-   - `API_ID`
-   - `API_HASH`
-   - `SESSION_STRING`
-6. Click **Apply** / **Deploy**
+### Option A — Render Blueprint (Fastest)
+1. Push this repository to your GitHub account.
+2. In Render, click **New +** → **Blueprint**.
+3. Select your repository. Render will automatically read `render.yaml`.
+4. Enter `API_ID`, `API_HASH`, and `SESSION_STRING`.
+5. Click **Apply**.
 
 ### Option B — Manual Web Service
-
-1. **New +** → **Web Service**
-2. Connect your GitHub repo
-3. Configure:
+1. In Render, click **New +** → **Web Service**.
+2. Select your repository.
+3. Configure settings:
    - **Environment:** Python 3
    - **Build Command:** `pip install -r requirements.txt`
    - **Start Command:** `python main.py`
-4. Go to the **Environment** tab and add the same three variables
-5. Click **Create Web Service**
-
-### Verifying Deployment
-
-- Check the **Logs** tab — you should see `Loaded Telethon StringSession from environment.` followed by `Logged in as: ...`
-- Visit your Render service URL — it should return `SelfBot Running`
-- `GET /health` should return `OK`
-- From Telegram, send `.help` from your own account to confirm commands respond
-
-### Redeploying After Changes
-
-Render auto-deploys on every push to your connected branch (if `autoDeploy: true` in `render.yaml`). To redeploy manually: **Dashboard → your service → Manual Deploy → Deploy latest commit**.
+4. In the **Environment** tab, add:
+   - `API_ID`
+   - `API_HASH`
+   - `SESSION_STRING`
+5. Click **Deploy**.
 
 ---
 
 ## 🔐 Environment Variables
 
-| Variable         | Required | Description                                                              |
-|-------------------|:--------:|------------------------------------------------------------------------|
-| `API_ID`          | ✅       | Telegram API ID from my.telegram.org                                    |
-| `API_HASH`        | ✅       | Telegram API Hash from my.telegram.org                                  |
-| `SESSION_STRING`  | ✅ (prod) | Telethon StringSession, generated once via `generate_session.py`        |
-| `PORT`            | ⚙️ auto  | Set automatically by Render; used by the health-check web server        |
-| `PHONE`           | ❌ optional | Only used for interactive login when `SESSION_STRING` is not set        |
+| Variable | Required | Description |
+|---|:---:|---|
+| `API_ID` | ✅ | Telegram API ID from my.telegram.org |
+| `API_HASH` | ✅ | Telegram API Hash from my.telegram.org |
+| `SESSION_STRING` | ✅ | Telethon StringSession generated via `generate_session.py` |
+| `PORT` | ⚙️ auto | Port assigned by hosting provider (default `8080`) |
 
 ---
 
-## 📖 Command Reference
+## 📖 Full Command Reference (200+ Commands)
 
-### Channels
+> All commands use the `.` prefix and are typed directly from your account in any Telegram chat.
+
+### 1. 🤖 Info & Telegram
 | Command | Description |
 |---|---|
-| `.autoaccept` | Toggle auto-accepting chat requests |
+| `.info` / `.userinfo` | Get complete details of a user (reply, `@username`, or ID) |
+| `.chatinfo` / `.tinfo` | Display current group or channel metadata and stats |
+| `.id` | Get user ID, chat ID, and replied message ID |
+| `.myid` | Quickly display your own user ID |
+| `.igpfp <username>` | Download full-resolution Instagram Profile Picture & stats |
+| `.insta <username>` | View Instagram profile details (followers, bio, link) |
+| `.github <username>` | Look up GitHub user profile and public repos |
+| `.repo <owner/repo>` | View GitHub repository details and stats |
+| `.time` / `.worldtime` | Display current UTC and major global timezones |
+| `.admins` | List all administrators in current group |
+| `.bots` | List all active bots in current group |
+| `.members` | Display member statistics and active user count |
+| `.zombies` | Scan and remove deleted accounts from the group |
+| `.dc` | Show Telegram Data Center (DC) information |
+| `.link` | Generate an invite or direct link for current message/chat |
+| `.pin` / `.unpin` | Pin or unpin a replied message |
+| `.unpinall` | Unpin all pinned messages in the chat |
+| `.pinned` | View the latest pinned message |
+| `.title <new_title>` | Change the title of the current group |
+| `.setdesc <text>` | Change the description of the current group |
+| `.slow <seconds>` | Set group slowmode duration (0 to disable) |
+| `.lock <type>` | Restrict group permissions (media, stickers, polls, etc.) |
+| `.unlock <type>` | Re-enable restricted group permissions |
+| `.dialogs` | Show total count of chats, channels, and groups |
+| `.firstmsg` | Find the first message in the current chat |
+| `.unread` | View unread chat count |
+| `.ocr` | Extract text from replied image or document |
 
-### User Controls *(reply, @username, or user ID)*
+---
+
+### 2. 🛡 Security & OSINT
 | Command | Description |
 |---|---|
-| `.mute` / `.unmute` | Silence a user (their messages get deleted) |
-| `.unban` | Remove a user from the ban list |
-| `.block` / `.unblock` | Telegram-level block/unblock |
-| `.kick` | Remove a user from a group |
-| `.admin` | Promote a user to group admin |
-| `.demote` | Remove a user's admin rights |
+| `.ip <ip/domain>` | Comprehensive IP geolocation, ISP, ASN, and map lookup |
+| `.myip` | Show server public IP and hosting location |
+| `.whois <domain>` | WHOIS domain registration and registrar lookup |
+| `.dns <domain>` | Query DNS records (A, AAAA, MX, TXT, NS) |
+| `.subdomains <domain>` | Enumerate known public subdomains |
+| `.ssl <domain>` | Check SSL/TLS certificate validity, issuer, and expiry |
+| `.headers <url>` | Inspect HTTP response headers of a target website |
+| `.unshort <short_url>`| Unshorten and trace redirect URL chains |
+| `.httpstatus <code>` | Explain HTTP response status codes |
+| `.bin <6_digits>` | Credit/Debit card BIN lookup (brand, type, issuing bank) |
+| `.cve <CVE-ID>` | Query National Vulnerability Database for CVE advisory |
+| `.genpass <length>` | Generate a secure, cryptographically random password |
+| `.b64 <enc/dec> <txt>`| Encode or decode Base64 strings |
+| `.hash <txt>` | Compute MD5, SHA1, SHA256, and SHA512 hashes |
+| `.hex <enc/dec> <txt>`| Convert text to or from hexadecimal format |
+| `.binary <enc/dec>` | Convert text to or from binary |
+| `.rot13 <text>` | Apply ROT13 Caesar cipher encryption/decryption |
+| `.morse <enc/dec>` | Convert text to or from Morse code |
+| `.urlencode <text>` | URL-encode a given string |
+| `.urldecode <text>` | Decode a URL-encoded string |
+| `.uuid` | Generate a fresh UUIDv4 identifier |
+| `.jwt <token>` | Parse and inspect JWT payload without signature verification |
+| `.secret <text>` | Encrypt or encode sensitive scratchpads |
+| `.net <host>` | Check host latency and network availability |
 
-### Broadcasting *(reply to the message you want to send)*
+---
+
+### 3. 🛠 Productivity & Utilities
 | Command | Description |
 |---|---|
-| `.frwd` | Forward the replied message to all your DMs |
-| `.gc` | Broadcast the replied message to all your groups |
-| `.broad` | Send the replied message's text to all DM contacts |
-| `.frwdall` | Combined DM + group broadcast |
-| `.dm @user message` | Send a single direct message |
+| `.tts [lang] <text>` | Convert text or replied message to natural voice note |
+| `.music <query>` | Search and download music/audio tracks |
+| `.song <query>` | Quick audio lookup |
+| `.lyrics <song name>` | Fetch complete song lyrics |
+| `.paste <text>` | Upload code or text to Spacebin/Hastebin |
+| `.calc <expression>` | Safe mathematical calculator |
+| `.weather <city>` | Live weather, temperature, humidity, and forecast |
+| `.tr <lang> [text]` | Translate text to any language (or reply to a message) |
+| `.qr <text/url>` | Generate a high-contrast QR Code image |
+| `.scanqr` | Decode QR code from a replied photo |
+| `.wiki <query>` | Search Wikipedia and return concise summaries |
+| `.define <word>` | English dictionary definition, phonetics, and synonyms |
+| `.short <long_url>` | Shorten a long URL via CleanURI/TinyURL |
+| `.currency <amt> <f> <t>`| Convert live fiat currencies (e.g. `.currency 100 USD INR`) |
+| `.remind <time> <msg>`| Set a reminder alert (e.g. `.remind 10m Check server`) |
+| `.timer <seconds>` | Countdown timer in chat |
+| `.todo <add/list/del>`| In-chat personal task checklist |
+| `.note <name> <text>` | Save persistent quick-notes |
+| `.notes` | List all saved notes |
+| `.unit <val> <from> <to>`| Convert units of measurement (km to miles, etc.) |
+| `.json <text>` | Format and validate raw JSON |
+| `.wordcount` | Count words, characters, and reading time of replied text |
+| `.epoch [timestamp]` | Convert between Epoch timestamps and human dates |
+| `.age <YYYY-MM-DD>` | Calculate exact age and days lived |
+| `.daysuntil <date>` | Count days remaining until target date |
+| `.randnum <min> <max>`| Generate a random number within range |
+| `.pick <item1, item2>`| Pick a random option from a comma-separated list |
+| `.color <hex>` | Display color preview swatch from hex code |
+| `.lorem [words]` | Generate placeholder Lorem Ipsum text |
 
-> All broadcast commands use randomized delays (5–10s, with a 40s pause every 15 messages) to reduce the risk of rate limits or account restrictions.
+---
 
-### Info & Lookups
+### 4. 👤 User & Stealth
 | Command | Description |
 |---|---|
-| `.info` / `.tinfo` | Full Telegram user info (reply or `@username`) |
-| `.chatinfo` | Details about the current group/channel |
-| `.id` | Get a user's or chat's ID |
-| `.insta @username` | Instagram profile lookup |
+| `.afk [reason]` | Activate AFK auto-responder |
+| `.back` / `.unafk` | Deactivate AFK and display time spent away |
+| `.status` | Display bot and account operational state |
+| `.me` | Display your account profile snapshot |
+| `.myusername` | Display your handle and profile permalink |
+| `.ghost` | Toggle ghost mode status indicator |
+| `.analytics` | View message and command usage analytics |
+| `.mood <text>` | Set temporary mood status flair |
+| `.speed` | Measure server ping, download, and upload speeds |
+| `.clearcache` | Clear temporary media and download cache |
+| `.setname <first> [last]`| Update your Telegram first/last name |
+| `.setbio <text>` | Update your Telegram profile bio |
+| `.setpfp` | Set replied image as your new profile photo |
+| `.delpfp` | Delete your latest profile photo |
+| `.block` | Block a user (reply, `@username`, or ID) |
+| `.unblock` | Unblock a user |
 
-### Utilities
+---
+
+### 5. 🧩 Moderation
 | Command | Description |
 |---|---|
-| `.count N [message]` | Countdown timer (1–300 seconds) |
-| `.del` | Clear private chat history |
-| `.purge N` | Delete the last N messages in a chat |
-| `.close N` | Leave the current group after N seconds |
-| `.mm` | Create a middleman group with a user |
-| `.tag [message]` | Tag all group members |
-| `.say text` | Send a message anonymously (deletes your command) |
-| `.calc expression` | Evaluate a math expression |
-| `.tr <lang> [text]` | Translate text or a replied message |
+| `.mute` / `.unmute` | Mute/unmute user (auto-deletes incoming messages) |
+| `.unmuteall` | Clear all muted users from database |
+| `.ban` / `.unban` | Ban/unban user from bot and current group |
+| `.unbanall` | Clear all banned users from database |
+| `.kick` | Remove user from current group |
+| `.softban` | Ban and immediately unban to clear user's messages |
+| `.tban <time> <user>` | Temporarily ban user (e.g. `.tban 1h @spammer`) |
+| `.tmute <time> <user>`| Temporarily mute user |
+| `.admin [title]` | Promote user to group admin with optional custom title |
+| `.demote` | Demote an admin back to regular member |
+| `.del` | Delete replied message |
+| `.purge <N>` | Delete last N messages in the chat |
+| `.purgeme <N>` | Delete only your own last N messages |
+| `.delall` | Clear private chat history |
+| `.delmsgs <N>` | Batch delete specific message range |
+| `.warn [reason]` | Issue a moderation warning to a user |
+| `.warns` | Check user warning count |
+| `.resetwarns` | Reset warnings for target user |
+| `.clean` | Clean spam and bot clutter in group |
+| `.close <seconds>` | Leave current group after a specified delay |
 
-### Reliability
+---
+
+### 6. 📡 Broadcast & Messaging
 | Command | Description |
 |---|---|
-| `.fix` | Toggle auto-fix mode (retries failed commands once, logs errors) |
-| `.fixlog` | Show the last logged errors |
+| `.frwd` | Forward replied message to all open DMs |
+| `.gc` | Broadcast replied message to all admin groups |
+| `.broad` | Send text content of replied message to all DMs |
+| `.frwdall` | Broadcast to both all DMs and all admin groups |
+| `.dm <@user> <msg>` | Send direct message to a user |
+| `.massdm <msg>` | Send direct message to all contact chats |
+| `.broadcastgc <msg>` | Broadcast text announcement to all groups |
+| `.dmfrwd <@user>` | Forward replied message to a specific user |
+| `.tag [message]` | Mention all members in the current group |
+| `.say <message>` | Send a message and silently delete your `.say` command |
+| `.echo <message>` | Echo text back into the chat |
+| `.type <message>` | Animated typewriter text effect |
+| `.poll <Q> \| <A> \| <B>`| Create a fast Telegram poll |
+| `.count <N> [msg]` | Countdown timer message |
+| `.spam <N> <text>` | Safe repetitive sender with built-in pacing |
+| `.mm <@user>` | Initiate a middleman trade transaction prompt |
 
-### AFK
+---
+
+### 7. 🎨 Text & Font Styles
 | Command | Description |
 |---|---|
-| `.afk [custom message]` | Enable AFK auto-reply |
-| `.back` | Disable AFK and show how long you were away |
+| `.font <style> <text>`| Apply styles (`bold`, `italic`, `mono`, `gothic`, etc.) |
+| `.shout <text>` | S H O U T E D  S P A C E D  T E X T |
+| `.mock <text>` | mOcKiNg sPoNgEbOb cAsE |
+| `.leet <text>` | 1337 5P34K translation |
+| `.zalgo <text>` | C̶o̶r̶r̶u̶p̶t̶e̶d̶ glitch text |
+| `.spoiler <text>` | Wrap message in Telegram spoiler tags |
+| `.bubble <text>` | Ⓟⓤⓑⓑⓛⓔ ⓣⓔⓧⓣ |
+| `.gothic <text>` | 𝔊𝔬𝔱𝔥𝔦𝔠 / 𝔉𝔯𝔞𝔨𝔱𝔲𝔯 𝔣𝔬𝔫𝔱 |
+| `.square <text>` | 🅂🅀🅄🄰🅁🄴 🅃🄴🅇🅃 |
+| `.cursive <text>` | 𝒞𝓊𝓇𝓈𝒾𝓋ℯ 𝓈𝒸𝓇𝒾𝓅𝓉 |
+| `.smallcaps <text>` | sᴍᴀʟʟ ᴄᴀᴘs ғᴏɴᴛ |
+| `.flip <text>` | ʇxǝʇ pǝddᴉlɟ uʍop-ǝpᴉsd∩ |
+| `.mirror <text>` | ɈxɘɈ bɘɿoɿɿiM |
+| `.upper <text>` | CONVERT TEXT TO ALL UPPERCASE |
+| `.lower <text>` | convert text to all lowercase |
+| `.titlecase <text>` | Capitalize Each Word Correctly |
+| `.vaporwave <text>` | Ｗ Ｉ Ｄ Ｅ  Ｖ Ａ Ｐ Ｏ Ｒ Ｗ Ａ Ｖ Ｅ |
+| `.superscript <txt>` | Sᵘᵖᵉʳˢᶜʳᶦᵖᵗ text |
+| `.subscript <txt>` | Sᵤbₛ꜀ᵣᵢₚₜ text |
+
+---
+
+### 8. 🎉 Fun & Games
+| Command | Description |
+|---|---|
+| `.react <emoji>` | Add animated reaction to replied message |
+| `.meme` | Fetch a random trending meme from Reddit |
+| `.cat` / `.dog` | Fetch cute cat or dog photos |
+| `.anime [query]` | Look up anime synopsis, rating, and episodes |
+| `.quote` | Inspiring famous quotes |
+| `.joke` | Tech, dad, and programming jokes |
+| `.trivia` | Random trivia question with spoiler answer |
+| `.fact` | Interesting verified world fact |
+| `.8ball <question>` | Magic 8-Ball oracle answer |
+| `.roll [max]` | Roll a random die (default 1–100) |
+| `.flip` | Flip a coin (Heads or Tails) |
+| `.dice` | Roll animated Telegram dice |
+| `.slap <@user>` | Slap a user with a humorous object |
+| `.roast <@user>` | Generate a lighthearted programming roast |
+| `.compliment <@user>`| Send a wholesome compliment |
+| `.insult <@user>` | Cyber & tech-themed insult |
+| `.truth` | Truth prompt for parties |
+| `.dare` | Dare prompt for parties |
+| `.rps <rock/paper/scissors>`| Play Rock, Paper, Scissors |
+| `.bored` | Productivity activities when feeling bored |
+| `.hack <@user>` | Fun fake terminal hacking simulation |
+
+---
+
+### 9. 💰 Crypto & Financial Markets
+| Command | Description |
+|---|---|
+| `.crypto <symbol>` | Real-time crypto price, 24h change, and volume |
+| `.btc` / `.eth` / `.sol`| Instant price check for Bitcoin, Ethereum, and Solana |
+| `.fng` / `.feargreed` | Live Crypto Fear & Greed Index |
+| `.gas` | Live Ethereum network gas tracker (Gwei) |
+| `.marketcap` | Total cryptocurrency global market capitalization |
+| `.convertcrypto <amt> <f> <t>`| Convert between crypto pairs (e.g. `.convertcrypto 1 BTC USDT`) |
+| `.fiat <USD/EUR/INR>`| Check major fiat exchange rates |
+| `.whale` | Scan recent large on-chain transactions |
+| `.portfolio` | Summary calculation of crypto holdings |
+
+---
+
+### 10. ⚙️ System & Diagnostics
+| Command | Description |
+|---|---|
+| `.help [category/cmd]`| Interactive help matrix |
+| `.ping` | Check bot response latency (ms) |
+| `.alive` | Display uptime, system load, and status card |
+| `.uptime` | Show exact hours, minutes, and seconds running |
+| `.sysinfo` | CPU usage, RAM utilization, OS, and Python version |
+| `.dev` / `.owner` | Display developer profile and credits |
+| `.autoaccept` | Toggle auto-accepting chat join requests |
+| `.fix` | Toggle auto-fix and retry mode |
+| `.fixlog` | View recent system error entries from `errors.log` |
+| `.restart` | Safely reboot the selfbot process |
+| `.version` | Display current build version |
 
 ---
 
 ## 🌙 AFK System — In Depth
 
-- **DM-only** — never replies inside groups, avoiding spammy behavior in shared spaces
-- **Replies once per user** — no repeated auto-replies if someone sends multiple messages while you're away
-- **Custom messages** — `.afk Busy with a client call` sets your own away message for that session
-- **Duration tracking** — `.back` reports how long you were away (e.g. *"I have been away for 12 minutes"*)
-- **Auto-disable on activity** — sending any manual (non-command) message from your account turns AFK off automatically, with a confirmation reply
-- **State reset** — the replied-users list clears every time AFK is toggled on or off, so a new AFK session starts clean
-- **In-memory only** — AFK state does not persist across restarts by design (a restart implies you're "back")
-
-**Default message** (used when no custom text is given):
-
-> *"Hello, I will be with you shortly (approximately 5–20 minutes). To help me assist you efficiently, please describe what you are interested in or what services you require."*
+- **DM-Only Operation:** Never responds in group chats to avoid spamming public channels.
+- **Rate-Limited Responding:** Replies strictly **once per user** per AFK session.
+- **Custom Away Message:** Pass custom context like `.afk Writing code, back at 6 PM`.
+- **Duration Reporting:** When returning with `.back`, computes total time spent away.
+- **Smart Activity Detection:** Any outgoing manual message automatically deactivates AFK.
 
 ---
 
 ## 🛡 Moderation System — In Depth
 
-- **Mute/Ban list** — stored persistently in `selfbot_data.json`, so it survives bot restarts/redeploys
-- **Auto-delete enforcement** — any incoming message from a muted/banned user ID is automatically deleted as soon as it's received
-- **Group-scoped actions** — `.kick`, `.admin`, and `.demote` only work inside groups/supergroups you're already an admin in (Telegram enforces this server-side)
-- **Flexible targeting** — every moderation command accepts a reply, an `@username`, or a raw numeric user ID
+- **Persistent Blacklists:** Muted and banned user lists are stored in `selfbot_data.json` and survive service restarts.
+- **Instant Message Interception:** Incoming messages from muted accounts are deleted instantly.
+- **Group Admin Checks:** High-privilege actions (`.kick`, `.admin`, `.slow`) automatically enforce Telegram permission checks.
 
 ---
 
 ## 📡 Broadcast System — In Depth
 
-- **`.frwd`** — forwards the replied message to every DM you have open with a real user (bots excluded)
-- **`.gc`** — broadcasts to every group/channel where you hold admin rights (falls back to all groups if none are found)
-- **`.broad`** — sends the *text content* of the replied message (not a forward) to every DM contact
-- **`.frwdall`** — combines DM + admin-group targets into one broadcast run
-- **Anti-ban pacing** — `safe_sleep()` adds a random 5–10 second delay between sends, plus a 40-second cooldown every 15 messages, to reduce the chance of triggering Telegram's spam/flood protections
-- **Failure counting** — every broadcast reports how many sends succeeded vs failed once complete
+- **Smart Pacing (`safe_sleep`):** Enforces 5–10s randomized delays and a 40s rest after every 15 chats.
+- **Failure Resilience:** Tracks successful vs failed deliveries and produces an accurate end-of-broadcast report.
 
 ---
 
 ## 🛠 Reliability, Auto-Fix & Crash Recovery
 
-- `.fix` toggles a safety net: if any command throws an error, it's logged to `errors.log` and retried once automatically
-- `.fixlog` shows the last 40 logged error entries directly in Telegram
-- The main run-loop restarts automatically with exponential backoff (5s → 10s → 20s → ... capped at 60s) on unexpected crashes
-- **Graceful session failure**: if `SESSION_STRING` is invalid, expired, or revoked, the bot logs:
-  ```
-  Invalid SESSION_STRING. Please generate a new Telethon StringSession.
-  ```
-  and exits cleanly instead of crash-looping — check the Render logs, regenerate a session with `generate_session.py`, and redeploy.
+- **Automatic Retries:** `.fix` intercepts errors, retries the command once, and logs failure traces into `errors.log`.
+- **Exponential Backoff:** If disconnected, client attempts reconnects (5s → 10s → 20s → up to 60s).
+- **Graceful Token Handling:** Detects expired or revoked StringSessions cleanly without entering crash loops.
 
 ---
 
 ## 🩺 Health Server & Uptime
 
-- An `aiohttp` server runs on the port Render assigns via the `PORT` environment variable
-- `GET /` → returns `SelfBot Running`
-- `GET /health` → returns `OK`
-- Render uses this endpoint to determine if the service is alive; on the free tier, an idle service may spin down after inactivity and cold-start on the next request/health check
+- Built-in `aiohttp` microservice listening on `$PORT`.
+- `GET /` → Returns `SelfBot Running`.
+- `GET /health` → Returns HTTP 200 `OK`.
+- Keeps cloud services on Render, Railway, and Fly.io healthy and active.
 
 ---
 
 ## ❓ Frequently Asked Questions
 
-**Q: Is this a Bot API bot (like ones made with @BotFather)?**
-No — this is a *userbot/selfbot*. It logs in as your real Telegram account via Telethon, not as a separate bot identity.
+**Q: Is this a regular Bot API bot?**
+No. This is a *userbot* (selfbot) that runs on your personal Telegram account via Telethon.
 
-**Q: Will this get my account banned?**
-Any automation on a personal account carries some risk if used to spam or mass-message. Built-in delays reduce this risk for broadcast commands, but there's no absolute guarantee. Use it on chats/groups you control, and avoid aggressive mass-broadcasting.
+**Q: Will my account get banned?**
+Using standard utility commands carries virtually no risk. Mass-broadcasting or spamming large volumes of unsolicited messages may trigger Telegram's anti-spam algorithms. Always broadcast responsibly.
 
-**Q: Can I run this without Render?**
-Yes — any host that can run a long-lived Python process works (VPS, Railway, Fly.io, a local machine, etc.). Just set the same environment variables.
-
-**Q: Do I need to regenerate `SESSION_STRING` often?**
-No — a StringSession stays valid until you manually terminate that session from Telegram's **Settings → Devices**, or Telegram invalidates it for security reasons.
-
-**Q: Can multiple people use one deployed instance?**
-No — a selfbot instance is tied to a single Telegram account via its session. Each user needs their own deployment with their own `SESSION_STRING`.
-
-**Q: What happens to AFK state if Render restarts my service?**
-AFK state is in-memory only, so a restart clears it (equivalent to `.back`). Moderation data (mute/ban lists) persists via `selfbot_data.json`.
+**Q: Can I run this on my own VPS or computer?**
+Yes. Any environment running Python 3.10+ will run this selfbot seamlessly.
 
 ---
 
 ## 🩹 Troubleshooting
 
-| Issue | Likely Cause | Fix |
+| Issue | Cause | Fix |
 |---|---|---|
-| `sqlite3.DatabaseError: file is not a database` | Old Base64 SQLite session used with the new StringSession code | Regenerate session with the current `generate_session.py` |
-| `Invalid SESSION_STRING...` in logs | Session string malformed, expired, or revoked | Regenerate a new StringSession and update the env var |
-| Bot won't log in | Missing/incorrect `API_ID`, `API_HASH`, or `SESSION_STRING` | Re-check env vars, regenerate session if needed |
-| Render service sleeps / goes idle | Free tier limitation | Upgrade plan, or use a scheduled uptime ping |
-| Commands not responding | Not sent from your own account, or missing `.` prefix | Only outgoing messages starting with `.` are handled |
-| Broadcast getting flagged/limited | Telegram anti-spam | Built-in delays help, but avoid mass-broadcasting frequently |
-| `aiohttp not installed` warning | Dependency missing | Confirm `requirements.txt` installed correctly on Render |
-| AFK not replying | Message sent in a group, not a DM | AFK only triggers in private chats by design |
-
----
-
-## 🗺 Roadmap
-
-Ideas that could be added in future versions (not yet implemented):
-- Persisting AFK state across restarts
-- Per-chat custom moderation rules
-- Web dashboard for viewing logs/stats
-- Multi-account support from a single deployment
-
----
-
-## 📝 Changelog
-
-**Latest — StringSession Migration**
-- Replaced Base64-encoded SQLite session handling with a native Telethon `StringSession`
-- Fixes `sqlite3.DatabaseError: file is not a database` on Render
-- Added graceful failure handling for invalid/expired sessions
-- Improved startup logging (`Loaded Telethon StringSession from environment.` / `Using local SQLite session file.`)
-- `generate_session.py` updated to produce a proper StringSession instead of a Base64 SQLite blob
-- All commands, AFK system, broadcast system, moderation system, health server, logging, auto-fix, and Render compatibility remain unchanged
-
-**Previous — Initial Render Build**
-- Converted original selfbot script into a production-ready, environment-variable-driven project
-- Added AFK auto-reply system (DM-only, once-per-user, duration tracking, auto-disable)
-- Added crash-safe restart loop, health server, and full Render deployment files
+| `sqlite3.DatabaseError` | Old SQLite session used with StringSession | Run `python generate_session.py` to get a fresh string |
+| `Invalid SESSION_STRING` | Malformed or revoked string | Regenerate your `SESSION_STRING` and update env vars |
+| Bot not responding | Message not sent from your account or missing `.` | Send commands directly from your logged-in account |
+| `.igpfp` not finding user | Private or rate-limited account | Verify username spelling; bot uses multiple public proxy mirrors |
 
 ---
 
 ## 📄 License
 
-This project is released under a **Custom Attribution License** (based on MIT) — see [`LICENSE`](./LICENSE) for the full text.
-
-**In short:**
-- ✅ You may copy, modify, extend, rebrand, and redistribute this project — personal or commercial use is fine
-- ✅ You may fork it and build your own version
-- ❌ You must **keep credit to the original author, Syed Rehan**, visible in the README, source header, or an in-app credits section — in the original project and in any derivative/fork
-- ❌ Provided with **no warranty** — use at your own risk
+This project is licensed under a **Custom Attribution License** (based on MIT).
+- You are free to fork, customize, and deploy this project.
+- **Attribution to the original author, Syed Rehan, is mandatory** in any fork, documentation, or deployed instances.
 
 ---
 
 ## ⚠️ Disclaimer
 
-This project automates a **regular Telegram user account** (not a Bot API bot). Mass messaging, forwarding, and broadcast features can conflict with Telegram's Terms of Service if misused (spam, unsolicited messages, mass adds, etc.). Telegram may flag, limit, or ban accounts that automate actions in ways that resemble spam or abuse — the built-in delays reduce but do not eliminate this risk.
-
-Use this project responsibly:
-- Only in groups/chats you own, moderate, or have explicit permission to manage
-- Only for legitimate purposes — customer support automation, community moderation, personal productivity (AFK replies), OSINT research on public data, etc.
-- Never for unsolicited spam, harassment, impersonation, or any activity that violates Telegram's Terms of Service or local law
-
-The developer is not responsible for any misuse of this software, any account restrictions/bans that result from it, or any data loss. This software is provided "as is" without warranty of any kind. **Use at your own risk.**
+This project is intended strictly for personal productivity, community moderation, and ethical research. Automated mass-messaging can violate Telegram's Terms of Service if misused. Use this software responsibly. The author is not liable for any account restrictions or damages resulting from misuse.
 
 ---
 
 ## 👤 Credits
 
 **Developed by [Syed Rehan](https://rehuux.vercel.app)**
-CyberSecurity Researcher & Ethical Hacker, Web Development, Telegram Bots, OSINT, AI Integration
+*CyberSecurity Researcher & Ethical Hacker · Web & Bot Developer · OSINT · AI Integration*
 
-Built with [Telethon](https://github.com/LonamiWebs/Telethon) · Deployed on [Render](https://render.com)
+- **Website / Portfolio:** [rehuux.vercel.app](https://rehuux.vercel.app)
+- **GitHub:** [@rehuux](https://github.com/rehuux)
+- **Telegram:** Contact via your personal account instance
 
-If you fork or reuse this project, please keep credit to **Syed Rehan** intact — see [LICENSE](./LICENSE) for details.
+*Built with [Telethon](https://github.com/LonamiWebs/Telethon) & Python Asyncio.*
