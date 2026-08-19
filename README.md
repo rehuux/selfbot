@@ -11,7 +11,7 @@ A production-ready, ultra-fast Telegram **userbot (selfbot)** built with [Teleth
 - [What This Project Is](#-what-this-project-is)
 - [How It Works](#-how-it-works)
 - [Architecture Overview](#-architecture-overview)
-- [✨ Key Features](#-key-features)
+- [Key Features](#-key-features)
 - [Project Structure](#-project-structure)
 - [Requirements](#-requirements)
 - [Getting Telegram API Credentials](#-getting-telegram-api-credentials)
