@@ -813,6 +813,433 @@ def _download_ig_pfp(username: str) -> Optional[Tuple[str, str, str]]:
 
     return None
 
+def _clean_ig_target(input_str: str) -> Tuple[str, str]:
+    """
+    Parses an Instagram username or URL into (type, target).
+    type can be 'reel', 'post', or 'user'.
+    """
+    s = input_str.strip()
+    m_reel = re.search(r'instagram\.com/(?:reel|reels)/([a-zA-Z0-9_\-]+)', s)
+    if m_reel:
+        return ("reel", m_reel.group(1))
+    m_post = re.search(r'instagram\.com/p/([a-zA-Z0-9_\-]+)', s)
+    if m_post:
+        return ("post", m_post.group(1))
+    m_story = re.search(r'instagram\.com/stories/([a-zA-Z0-9_\.]+)', s)
+    if m_story:
+        return ("user", m_story.group(1))
+    m_user = re.search(r'instagram\.com/([a-zA-Z0-9_\.]+)', s)
+    if m_user:
+        return ("user", m_user.group(1))
+    clean = s.lstrip("@").split("/")[0].split("?")[0].strip()
+    return ("user", clean)
+
+def _fetch_ig_socket_profile(username: str, server_type: str = "stories") -> Optional[Dict[str, Any]]:
+    """
+    Queries live Instagram profile and media data via public socket streaming protocol.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Referer": f"https://insta-stories-viewer.com/{urllib.parse.quote(username)}/",
+        "Origin": "https://insta-stories-viewer.com",
+        "Accept": "application/json, text/plain, */*"
+    }
+
+    try:
+        req = urllib.request.Request("https://insta-stories-viewer.com/connect/", headers=headers)
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            token_data = json.loads(r.read().decode())
+            token = token_data.get("token")
+
+        sid_url = f"https://insta-stories-viewer.com/socket.io/?EIO=4&transport=polling&t={int(time.time()*1000)}"
+        req = urllib.request.Request(sid_url, headers=headers)
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            raw = r.read().decode()
+            if raw.startswith("0"):
+                handshake = json.loads(raw[1:])
+                sid = handshake.get("sid")
+            else:
+                return None
+
+        post_url = f"https://insta-stories-viewer.com/socket.io/?EIO=4&transport=polling&sid={sid}"
+        req = urllib.request.Request(post_url, data=b"40", headers={**headers, "Content-Type": "text/plain;charset=UTF-8"})
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            r.read()
+
+        search_payload = json.dumps([
+            "search",
+            {
+                "username": username,
+                "date": int(time.time()*1000),
+                "token": token,
+                "serverType": server_type
+            }
+        ])
+        req = urllib.request.Request(post_url, data=f"42{search_payload}".encode("utf-8"), headers={**headers, "Content-Type": "text/plain;charset=UTF-8"})
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            r.read()
+
+        poll_url = f"https://insta-stories-viewer.com/socket.io/?EIO=4&transport=polling&sid={sid}&t={int(time.time()*1000)}"
+        decoder = json.JSONDecoder()
+        for _ in range(8):
+            time.sleep(0.6)
+            req = urllib.request.Request(poll_url, headers=headers)
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+                    poll_res = r.read().decode()
+                    for chunk in poll_res.split("\x1e"):
+                        chunk = chunk.strip()
+                        if not chunk:
+                            continue
+                        idx = 0
+                        while idx < len(chunk) and chunk[idx].isdigit():
+                            idx += 1
+                        if chunk[:idx] == "42" and chunk[idx:]:
+                            try:
+                                obj, _ = decoder.raw_decode(chunk[idx:])
+                                if isinstance(obj, list) and len(obj) >= 2 and obj[0] == "searchResult":
+                                    return obj[1]
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+def _download_media_url_to_file(media_url: str, is_video: bool = False) -> Optional[str]:
+    """Downloads an image or video URL to a local temporary file."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ext = ".mp4" if is_video else ".jpg"
+    out_path = os.path.join(TEMP_DIR, f"igmedia_{uuid4().hex}{ext}")
+    try:
+        req = urllib.request.Request(media_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer": "https://insta-stories-viewer.com/"
+        })
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as r:
+            content = r.read()
+            if len(content) > 1000:
+                with open(out_path, "wb") as f:
+                    f.write(content)
+                return out_path
+    except Exception:
+        pass
+    return None
+
+def _download_ig_stories(target_input: str) -> Tuple[List[Tuple[str, bool, str]], str]:
+    """
+    Downloads active stories from a public Instagram account.
+    Returns (list_of_(filepath, is_video, caption), status_text).
+    """
+    _, user = _clean_ig_target(target_input)
+    if not user:
+        return ([], "❌ Please provide a valid Instagram username or story URL.")
+
+    # Strategy 1: Real-time Socket.IO Live Engine
+    res = _fetch_ig_socket_profile(user, server_type="stories")
+    if res and isinstance(res, dict) and "data" in res:
+        d = res["data"]
+        u_info = d.get("user") or {}
+        fn = u_info.get("full_name") or user
+        followers = u_info.get("edge_followed_by", 0)
+        is_priv = u_info.get("is_private", False)
+
+        if is_priv:
+            msg = (
+                f"🔒 **Private Account:** `@{user}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **Name:** `{fn}`\n"
+                f"👥 **Followers:** `{followers:,}`\n"
+                f"ℹ️ Stories cannot be downloaded from private accounts without permission.\n"
+                f"🔗 https://instagram.com/{user}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            return ([], msg)
+
+        reels = d.get("reels") or []
+        if reels:
+            downloaded = []
+            for idx, story in enumerate(reels[:12], 1):
+                vid_url = story.get("video_url")
+                img_url = story.get("display_url") or story.get("display_src") or story.get("src")
+                media_url = vid_url or img_url
+                is_video = bool(vid_url)
+                if media_url:
+                    fp = _download_media_url_to_file(media_url, is_video=is_video)
+                    if fp:
+                        taken_at = story.get("taken_at_timestamp")
+                        time_str = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(taken_at)) if taken_at else "Recent"
+                        caption = (
+                            f"🎬 **Instagram Story ({idx}/{len(reels)}):** `@{user}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👤 **User:** `{fn}` (`@{user}`)\n"
+                            f"🕒 **Posted:** `{time_str}`\n"
+                            f"🔗 https://instagram.com/stories/{user}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        downloaded.append((fp, is_video, caption))
+            if downloaded:
+                return (downloaded, f"✅ Successfully downloaded {len(downloaded)} stories for @{user}")
+
+        # If user has no active stories
+        msg = (
+            f"ℹ️ **No Active Stories for @{user}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Name:** `{fn}`\n"
+            f"👥 **Followers:** `{followers:,}`\n"
+            f"📮 **Status:** No active stories posted in the last 24 hours.\n"
+            f"🔗 **Profile:** https://instagram.com/{user}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        return ([], msg)
+
+    # Strategy 2: Web Mirror HTML Extraction
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        url = f"https://insta-stories-viewer.com/{urllib.parse.quote(user)}/"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        })
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+            # Extract story media links
+            media_links = re.findall(r'(https://cdn\.iqsaved\.com/[^\s\"\'<>]+)', html)
+            if media_links:
+                downloaded = []
+                for idx, m_url in enumerate(media_links[:8], 1):
+                    fp = _download_media_url_to_file(m_url, is_video=False)
+                    if fp:
+                        caption = (
+                            f"🎬 **Instagram Story ({idx}/{len(media_links)}):** `@{user}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🔗 https://instagram.com/stories/{user}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        downloaded.append((fp, False, caption))
+                if downloaded:
+                    return (downloaded, f"✅ Downloaded {len(downloaded)} stories for @{user}")
+    except Exception:
+        pass
+
+    return ([], f"❌ **Could not find or fetch stories for @{user}.**\nMake sure the account is public and username is correct:\nhttps://instagram.com/{user}")
+
+def _download_ig_posts(target_input: str) -> Tuple[List[Tuple[str, bool, str]], str]:
+    """
+    Downloads latest posts from a public Instagram account or a specific post URL.
+    Returns (list_of_(filepath, is_video, caption), status_text).
+    """
+    kind, val = _clean_ig_target(target_input)
+    if not val:
+        return ([], "❌ Please provide a valid Instagram username or post URL.")
+
+    # Single Post URL handler
+    if kind == "post":
+        shortcode = val
+        embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            req = urllib.request.Request(embed_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            })
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+                # Search for media in embed
+                imgs = re.findall(r'<img[^>]+src="([^"]+)"', html)
+                cdn_imgs = [u.replace("&amp;", "&") for u in imgs if "cdninstagram" in u or "fbcdn" in u or "instagram." in u]
+                if cdn_imgs:
+                    fp = _download_media_url_to_file(cdn_imgs[0], is_video=False)
+                    if fp:
+                        caption = (
+                            f"📸 **Instagram Post:** `{shortcode}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🔗 https://instagram.com/p/{shortcode}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        return ([(fp, False, caption)], f"✅ Downloaded post {shortcode}")
+        except Exception:
+            pass
+
+    # Public Account handler (Username)
+    user = val
+    res = _fetch_ig_socket_profile(user, server_type="stories-posts")
+    if res and isinstance(res, dict) and "data" in res:
+        d = res["data"]
+        u_info = d.get("user") or {}
+        fn = u_info.get("full_name") or user
+        followers = u_info.get("edge_followed_by", 0)
+        edges = d.get("edges") or []
+
+        if edges:
+            downloaded = []
+            for idx, post in enumerate(edges[:6], 1):
+                node = post.get("node") if isinstance(post, dict) and "node" in post else post
+                vid_url = node.get("video_url")
+                img_url = node.get("display_url") or node.get("display_src")
+                media_url = vid_url or img_url
+                is_video = bool(vid_url) or node.get("is_video", False)
+                shortcode = node.get("shortcode") or node.get("code") or "N/A"
+                edge_likes = node.get("edge_liked_by", {}).get("count", 0)
+                edge_comments = node.get("edge_media_to_comment", {}).get("count", 0)
+                if media_url:
+                    fp = _download_media_url_to_file(media_url, is_video=is_video)
+                    if fp:
+                        caption = (
+                            f"📮 **Instagram Post ({idx}/{len(edges)}):** `@{user}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👤 **Author:** `{fn}` (`@{user}`)\n"
+                            f"❤️ **Likes:** `{edge_likes:,}` | 💬 **Comments:** `{edge_comments:,}`\n"
+                            f"🔗 https://instagram.com/p/{shortcode}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        downloaded.append((fp, is_video, caption))
+            if downloaded:
+                return (downloaded, f"✅ Successfully downloaded {len(downloaded)} posts for @{user}")
+
+        # Fallback profile summary if 0 posts
+        msg = (
+            f"ℹ️ **Instagram Posts for @{user}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Name:** `{fn}`\n"
+            f"👥 **Followers:** `{followers:,}`\n"
+            f"📮 **Account Link:** https://instagram.com/{user}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        return ([], msg)
+
+    # Strategy 2: Web Mirror HTML Extraction for Posts
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        url = f"https://insta-stories-viewer.com/{urllib.parse.quote(user)}/"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        })
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            html = r.read().decode("utf-8", errors="ignore")
+            media_links = re.findall(r'(https://cdn\.iqsaved\.com/[^\s\"\'<>]+)', html)
+            if media_links:
+                downloaded = []
+                for idx, m_url in enumerate(media_links[:4], 1):
+                    fp = _download_media_url_to_file(m_url, is_video=False)
+                    if fp:
+                        caption = (
+                            f"📮 **Instagram Post ({idx}/{len(media_links)}):** `@{user}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🔗 https://instagram.com/{user}\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        downloaded.append((fp, False, caption))
+                if downloaded:
+                    return (downloaded, f"✅ Downloaded {len(downloaded)} posts for @{user}")
+    except Exception:
+        pass
+
+    return ([], f"❌ **Could not find or fetch posts for @{user}.**\nEnsure the account is public and username is valid:\nhttps://instagram.com/{user}")
+
+def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], str]:
+    """
+    Downloads reels/videos from an Instagram username or reel URL.
+    Returns (list_of_(filepath, is_video, caption), status_text).
+    """
+    kind, val = _clean_ig_target(target_input)
+    if not val:
+        return ([], "❌ Please provide a valid Instagram username or reel URL.")
+
+    # Single Reel URL handler
+    if kind in ("reel", "post"):
+        shortcode = val
+        embed_url = f"https://www.instagram.com/reel/{shortcode}/embed/captioned/"
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            req = urllib.request.Request(embed_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            })
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+                # Search for video URLs
+                video_matches = re.findall(r'"video_url":"([^"]+)"', html)
+                if video_matches:
+                    vid_url = video_matches[0].replace(r"\u0026", "&").replace("&amp;", "&")
+                    fp = _download_media_url_to_file(vid_url, is_video=True)
+                    if fp:
+                        caption = (
+                            f"🎞 **Instagram Reel:** `{shortcode}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🔗 https://instagram.com/reel/{shortcode}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        return ([(fp, True, caption)], f"✅ Downloaded reel {shortcode}")
+        except Exception:
+            pass
+
+    # Public Account handler (Username)
+    user = val
+    res = _fetch_ig_socket_profile(user, server_type="stories-posts")
+    if res and isinstance(res, dict) and "data" in res:
+        d = res["data"]
+        u_info = d.get("user") or {}
+        fn = u_info.get("full_name") or user
+        followers = u_info.get("edge_followed_by", 0)
+        edges = d.get("edges") or []
+
+        # Filter video posts / reels
+        video_edges = [p for p in edges if (isinstance(p, dict) and p.get("is_video")) or (isinstance(p, dict) and "node" in p and p["node"].get("is_video")) or (isinstance(p, dict) and p.get("video_url"))]
+        if not video_edges and edges:
+            video_edges = edges
+
+        if video_edges:
+            downloaded = []
+            for idx, post in enumerate(video_edges[:4], 1):
+                node = post.get("node") if isinstance(post, dict) and "node" in post else post
+                vid_url = node.get("video_url")
+                img_url = node.get("display_url") or node.get("display_src")
+                media_url = vid_url or img_url
+                is_video = bool(vid_url) or node.get("is_video", False)
+                shortcode = node.get("shortcode") or node.get("code") or "N/A"
+                if media_url:
+                    fp = _download_media_url_to_file(media_url, is_video=is_video)
+                    if fp:
+                        caption = (
+                            f"🎞 **Instagram Reel ({idx}/{len(video_edges)}):** `@{user}`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👤 **Creator:** `{fn}` (`@{user}`)\n"
+                            f"🔗 https://instagram.com/reel/{shortcode}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        downloaded.append((fp, is_video, caption))
+            if downloaded:
+                return (downloaded, f"✅ Successfully downloaded {len(downloaded)} reels for @{user}")
+
+        msg = (
+            f"ℹ️ **Instagram Reels for @{user}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Name:** `{fn}`\n"
+            f"👥 **Followers:** `{followers:,}`\n"
+            f"🔗 **Profile:** https://instagram.com/{user}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        return ([], msg)
+
+    return ([], f"❌ **Could not find or fetch reels for @{user}.**\nEnsure the account is public and has reels posted:\nhttps://instagram.com/{user}")
+
 def _the_harvester_recon(target: str) -> Tuple[str, Optional[str]]:
     """
     Performs comprehensive theHarvester-style OSINT reconnaissance on a domain/target.
@@ -2341,7 +2768,7 @@ INSULTS_TECH = [
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
         ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
-        ".insta", ".ig", ".igpfp", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
+        ".insta", ".ig", ".iginfo", ".igpfp", ".igd", ".igp", ".igr", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
         ".members", ".zombies", ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned",
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
@@ -2753,6 +3180,107 @@ async def _cmd_dispatch(event):
                         pass
         else:
             await event.edit(f"❌ **Could not find or fetch profile picture for:** `@{clean_user}`\nMake sure the username is correct.")
+
+    elif cmd in (".igd", ".igstory", ".igstories", ".instastory", ".instad"):
+        if not args_str:
+            await event.edit("❌ **Usage:** `.igd <username/story_url>`\n_Example:_ `.igd cristiano` or `.igd rehuux`")
+            return
+        clean_target = args_str.strip()
+        await event.edit(f"🎬 **Fetching Instagram Stories for {clean_target}...**")
+        loop = asyncio.get_event_loop()
+        items, status_msg = await loop.run_in_executor(None, _download_ig_stories, clean_target)
+        if items:
+            sent_count = 0
+            for file_path, is_vid, caption in items:
+                try:
+                    await client.send_file(
+                        event.chat_id,
+                        file_path,
+                        caption=caption,
+                        video=is_vid,
+                        reply_to=event.reply_to_msg_id
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    log.error(f"Error sending story file: {e}")
+                finally:
+                    if os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                        except Exception:
+                            pass
+            try:
+                await event.delete()
+            except Exception:
+                pass
+        else:
+            await event.edit(status_msg)
+
+    elif cmd in (".igp", ".igpost", ".igposts", ".instapost"):
+        if not args_str:
+            await event.edit("❌ **Usage:** `.igp <username/post_url>`\n_Example:_ `.igp cristiano` or `.igp https://instagram.com/p/...`")
+            return
+        clean_target = args_str.strip()
+        await event.edit(f"📮 **Fetching Instagram Posts for {clean_target}...**")
+        loop = asyncio.get_event_loop()
+        items, status_msg = await loop.run_in_executor(None, _download_ig_posts, clean_target)
+        if items:
+            for file_path, is_vid, caption in items:
+                try:
+                    await client.send_file(
+                        event.chat_id,
+                        file_path,
+                        caption=caption,
+                        video=is_vid,
+                        reply_to=event.reply_to_msg_id
+                    )
+                except Exception as e:
+                    log.error(f"Error sending post file: {e}")
+                finally:
+                    if os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                        except Exception:
+                            pass
+            try:
+                await event.delete()
+            except Exception:
+                pass
+        else:
+            await event.edit(status_msg)
+
+    elif cmd in (".igr", ".igreel", ".igreels", ".instareel", ".instareels"):
+        if not args_str:
+            await event.edit("❌ **Usage:** `.igr <username/reel_url>`\n_Example:_ `.igr cristiano` or `.igr https://instagram.com/reel/...`")
+            return
+        clean_target = args_str.strip()
+        await event.edit(f"🎞 **Fetching Instagram Reels for {clean_target}...**")
+        loop = asyncio.get_event_loop()
+        items, status_msg = await loop.run_in_executor(None, _download_ig_reels, clean_target)
+        if items:
+            for file_path, is_vid, caption in items:
+                try:
+                    await client.send_file(
+                        event.chat_id,
+                        file_path,
+                        caption=caption,
+                        video=is_vid,
+                        reply_to=event.reply_to_msg_id
+                    )
+                except Exception as e:
+                    log.error(f"Error sending reel file: {e}")
+                finally:
+                    if os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                        except Exception:
+                            pass
+            try:
+                await event.delete()
+            except Exception:
+                pass
+        else:
+            await event.edit(status_msg)
 
     # Moderation
     elif cmd in (".mute", ".ban"):
