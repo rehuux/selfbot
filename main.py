@@ -151,6 +151,9 @@ SECRET_MASTER_PASSWORD = os.environ.get("SECRET_MASTER_PASSWORD", "MasterRehu202
 ETHERSCAN_API_KEY = os.environ.get("ETHERSCAN_API_KEY", "")
 BSCSCAN_API_KEY = os.environ.get("BSCSCAN_API_KEY", "")
 VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "BZgkqPqms7Kj9ulSkVzn").strip()
+ELEVENLABS_MODEL_ID = os.environ.get("ELEVENLABS_MODEL_ID", "").strip()
 
 WHALE_CHECK_INTERVAL = 60
 WHALE_BTC_THRESHOLD_SATS = 5_000_000_000
@@ -2010,18 +2013,54 @@ def _convert_currency(amount, from_cur, to_cur):
         return f"❌ Currency conversion failed: {e}"
     return "❌ Invalid currency code."
 
-def _download_tts(text: str, lang: str = "en") -> Optional[str]:
+def _download_tts(text: str, lang: str = "en", voice_id: Optional[str] = None) -> Optional[str]:
     text = text.strip()
     if not text:
         return None
     out_file = os.path.join(TEMP_DIR, f"tts_{uuid4().hex}.mp3")
 
-    # Standardize language code
+    # Strategy 1: ElevenLabs AI Voice (High-Fidelity Neural Speech)
+    if ELEVENLABS_API_KEY:
+        try:
+            target_voice = voice_id or ELEVENLABS_VOICE_ID or "BZgkqPqms7Kj9ulSkVzn"
+            if ELEVENLABS_MODEL_ID:
+                target_model = ELEVENLABS_MODEL_ID
+            elif len(text) < 80:
+                target_model = "eleven_flash_v2_5"
+            else:
+                target_model = "eleven_multilingual_v2"
+            eleven_url = f"https://api.elevenlabs.io/v1/text-to-speech/{target_voice}"
+            
+            headers = {
+                "xi-api-key": ELEVENLABS_API_KEY,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            payload = {
+                "text": text,
+                "model_id": target_model,
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
+            }
+            r = requests.post(eleven_url, json=payload, headers=headers, timeout=25)
+            if r.status_code == 200 and len(r.content) > 100:
+                with open(out_file, "wb") as f:
+                    f.write(r.content)
+                return out_file
+            else:
+                log.warning(f"ElevenLabs TTS returned HTTP {r.status_code}: {r.text[:150]}")
+        except Exception as e:
+            log.warning(f"ElevenLabs TTS error (falling back to standard TTS): {e}")
+
+    # Standardize language code for Google Translate / gTTS fallbacks
     tl = lang if len(lang) == 2 and lang.isalpha() else ("hi" if lang.lower() in ("hindi", "hi", "in", "india") else "en")
 
-    # Strategy 1: Google Translate Direct Speech Engine (Classic AI Robot Voice)
+    # Strategy 2: Google Translate Direct Speech Engine (Classic Voice Fallback)
     try:
-        q = urllib.parse.quote(text)
+        q = urllib.parse.quote(text[:250])
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={tl}&client=tw-ob"
         r = requests.get(
             url,
@@ -2038,7 +2077,7 @@ def _download_tts(text: str, lang: str = "en") -> Optional[str]:
     except Exception:
         pass
 
-    # Strategy 2: gTTS Python library fallback
+    # Strategy 3: gTTS Python library fallback
     try:
         from gtts import gTTS
         tts = gTTS(text=text, lang=tl)
@@ -2416,19 +2455,6 @@ COMPLIMENTS_LIST = [
     "You make conversations interesting just by being yourself."
 ]
 
-def _download_tts(text: str, lang: str = "en") -> Optional[str]:
-    try:
-        url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={urllib.parse.quote(text[:200])}&tl={lang}&client=tw-ob"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if r.status_code == 200 and len(r.content) > 100:
-            out_file = os.path.join(TEMP_DIR, f"tts_{uuid4().hex}.mp3")
-            with open(out_file, "wb") as f:
-                f.write(r.content)
-            return out_file
-    except Exception as e:
-        log_error("tts", e)
-    return None
-
 def _run_speedtest_sync():
     if SPEEDTEST_OK:
         try:
@@ -2779,7 +2805,7 @@ HELP_CATEGORIES = {
         ".urldecode", ".uuid", ".jwt", ".cve"
     ],
     "🛠 Productivity": [
-        ".music", ".song", ".lyrics", ".paste", ".tts", ".voice", ".remind", ".unit",
+        ".music", ".song", ".lyrics", ".paste", ".tts", ".voice", ".eleven", ".11labs", ".remind", ".unit",
         ".convert", ".json", ".note", ".notes", ".calc", ".weather", ".tr", ".translate",
         ".qr", ".scanqr", ".crypto", ".define", ".github", ".short", ".schedule",
         ".portfolio", ".currency", ".wiki", ".pic", ".timer", ".todo", ".wordcount",
@@ -4130,7 +4156,7 @@ async def _cmd_dispatch(event):
         res = await loop.run_in_executor(None, _paste_text, content)
         await event.edit(res)
 
-    elif cmd in (".tts", ".voice"):
+    elif cmd in (".tts", ".voice", ".eleven", ".11labs"):
         content = args_str
         lang = "en"
         if not content and event.is_reply:
@@ -4146,7 +4172,8 @@ async def _cmd_dispatch(event):
         if not content:
             await event.edit("❌ Provide text or reply to a message: `.tts [lang] <text>`\n_Example:_ `.tts hello world` or `.tts hi namaste dost`")
             return
-        await event.edit("🎙 **Generating Voice Note...**")
+        status_txt = "🎙 **Generating ElevenLabs AI Voice Note...**" if ELEVENLABS_API_KEY else "🎙 **Generating Voice Note...**"
+        await event.edit(status_txt)
         loop = asyncio.get_event_loop()
         audio_path = await loop.run_in_executor(None, _download_tts, content, lang)
         if audio_path and os.path.exists(audio_path):
