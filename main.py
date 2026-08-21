@@ -1641,15 +1641,65 @@ def _random_meme():
         return None, f"❌ Meme fetch failed: {e}"
 
 def _random_subreddit_post(subreddit):
+    sub = subreddit.strip().lstrip("r/").strip()
+    headers = {
+        "User-Agent": f"TelegramUserBot/{random.randint(1000, 9999)} (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+    }
+
+    # Strategy 1: meme-api batch fetch (returns 40 items at once, randomly selected)
     try:
-        r = requests.get(f"https://meme-api.com/gimme/{subreddit}", timeout=10)
-        d = r.json()
-        if not d.get("url"):
-            return None, f"❌ Couldn't fetch a post from r/{subreddit} right now."
-        caption = f"📷 **{d.get('title', 'Post')}**\nr/{d.get('subreddit', subreddit)}"
-        return d["url"], caption
+        r = requests.get(f"https://meme-api.com/gimme/{sub}/40", timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            memes = d.get("memes", [])
+            if memes:
+                valid = [m for m in memes if m.get("url") and not m.get("nsfw", False)]
+                pool = valid if valid else memes
+                selected = random.choice(pool)
+                title = selected.get("title", "Post")
+                s_name = selected.get("subreddit", sub)
+                caption = f"😹 **{title}**\nr/{s_name}"
+                return selected["url"], caption
     except Exception as e:
-        return None, f"❌ Fetch from r/{subreddit} failed: {e}"
+        log.warning(f"meme-api batch fetch error for {sub}: {e}")
+
+    # Strategy 2: Direct Reddit JSON with random sorting (hot / top / new)
+    try:
+        sort_mode = random.choice(["hot", "top", "new"])
+        t_param = f"&t={random.choice(['day', 'week', 'month', 'all'])}" if sort_mode == "top" else ""
+        url = f"https://www.reddit.com/r/{sub}/{sort_mode}.json?limit=50{t_param}"
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            children = data.get("data", {}).get("children", [])
+            candidates = []
+            for child in children:
+                p = child.get("data", {})
+                img_url = p.get("url_overridden_by_dest") or p.get("url", "")
+                title = p.get("title", "")
+                is_img = any(img_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")) or "i.redd.it" in img_url or "i.imgur.com" in img_url
+                if is_img and not p.get("over_18", False):
+                    candidates.append((img_url, title))
+            if candidates:
+                chosen_url, chosen_title = random.choice(candidates)
+                caption = f"📷 **{chosen_title}**\nr/{sub}"
+                return chosen_url, caption
+    except Exception as e:
+        log.warning(f"Reddit direct JSON error for {sub}: {e}")
+
+    # Strategy 3: Single meme-api fallback
+    try:
+        r = requests.get(f"https://meme-api.com/gimme/{sub}", timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("url"):
+                caption = f"😹 **{d.get('title', 'Post')}**\nr/{d.get('subreddit', sub)}"
+                return d["url"], caption
+    except Exception as e:
+        log.warning(f"Single meme-api fallback error for {sub}: {e}")
+
+    return None, f"❌ Couldn't fetch a post from r/{sub} right now."
 
 def _random_trivia():
     try:
@@ -1857,6 +1907,179 @@ def _ip_lookup(ip):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━"""
     except Exception as e:
         return f"❌ IP lookup failed: {e}"
+
+def _format_vt_url_report(data, original_url):
+    attr = data.get("data", {}).get("attributes", {})
+    stats = attr.get("last_analysis_stats", {})
+    malicious = stats.get("malicious", 0)
+    suspicious = stats.get("suspicious", 0)
+    harmless = stats.get("harmless", 0)
+    undetected = stats.get("undetected", 0)
+    total = malicious + suspicious + harmless + undetected or 1
+
+    if malicious > 0:
+        status_badge = f"🔴 **MALICIOUS / DANGEROUS** ({malicious}/{total} engines detected threats)"
+    elif suspicious > 0:
+        status_badge = f"🟡 **SUSPICIOUS** ({suspicious}/{total} engines flagged warning)"
+    else:
+        status_badge = f"🟢 **CLEAN & SAFE** (0/{total} detections)"
+
+    categories = attr.get("categories", {})
+    unique_cats = list({str(v) for v in categories.values() if v})[:4]
+    cats_str = ", ".join(unique_cats) if unique_cats else "Clean / Uncategorized"
+
+    detections = []
+    results = attr.get("last_analysis_results", {})
+    for engine, res in results.items():
+        if res.get("category") in ("malicious", "suspicious"):
+            engine_name = res.get("engine_name", engine)
+            result_str = res.get("result", "threat detected")
+            detections.append(f"• **{engine_name}**: `{result_str}`")
+
+    detection_block = ""
+    if detections:
+        detection_block = "\n\n⚠️ **Flagged By:**\n" + "\n".join(detections[:6])
+        if len(detections) > 6:
+            detection_block += f"\n*...and {len(detections) - 6} more security vendors.*"
+
+    reputation = attr.get("reputation", 0)
+    final_url = attr.get("url", original_url)
+
+    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ **VirusTotal Scan Report**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 **Target:** `{original_url}`
+🔗 **Final URL:** `{final_url}`
+📊 **Verdict:** {status_badge}
+
+✓ **Malicious Engines:** `{malicious}`
+✓ **Suspicious Engines:** `{suspicious}`
+✓ **Harmless / Clean:** `{harmless + undetected}`
+✓ **Reputation Score:** `{reputation}`
+✓ **Categories:** `{cats_str}`{detection_block}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+def _format_vt_file_report(data, filename, file_hash):
+    attr = data.get("data", {}).get("attributes", {})
+    stats = attr.get("last_analysis_stats", {})
+    malicious = stats.get("malicious", 0)
+    suspicious = stats.get("suspicious", 0)
+    harmless = stats.get("harmless", 0)
+    undetected = stats.get("undetected", 0)
+    total = malicious + suspicious + harmless + undetected or 1
+
+    if malicious > 0:
+        status_badge = f"🔴 **MALICIOUS** ({malicious}/{total} AV engines detected malware)"
+    elif suspicious > 0:
+        status_badge = f"🟡 **SUSPICIOUS** ({suspicious}/{total} AV engines flagged warning)"
+    else:
+        status_badge = f"🟢 **CLEAN & SAFE** (0/{total} detections)"
+
+    file_type = attr.get("type_description", attr.get("meaningful_name", "Unknown File"))
+    size_bytes = attr.get("size", 0)
+    size_str = f"{size_bytes / 1024:.1f} KB" if size_bytes < 1024 * 1024 else f"{size_bytes / (1024*1024):.2f} MB"
+
+    detections = []
+    results = attr.get("last_analysis_results", {})
+    for engine, res in results.items():
+        if res.get("category") in ("malicious", "suspicious"):
+            engine_name = res.get("engine_name", engine)
+            result_str = res.get("result", "malware detected")
+            detections.append(f"• **{engine_name}**: `{result_str}`")
+
+    detection_block = ""
+    if detections:
+        detection_block = "\n\n⚠️ **Threats Detected:**\n" + "\n".join(detections[:6])
+        if len(detections) > 6:
+            detection_block += f"\n*...and {len(detections) - 6} more antivirus engines.*"
+
+    return f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ **VirusTotal File Scan**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+📄 **File:** `{filename}`
+📦 **Type:** `{file_type}` ({size_str})
+🔑 **SHA256:** `{file_hash[:16]}...`
+📊 **Verdict:** {status_badge}
+
+✓ **Malicious Engines:** `{malicious}`
+✓ **Suspicious Engines:** `{suspicious}`
+✓ **Clean Engines:** `{harmless + undetected}`{detection_block}
+━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
+def _virustotal_scan(target, file_bytes=None, filename=None):
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "").strip() or VIRUSTOTAL_API_KEY.strip()
+    if not vt_key:
+        return "❌ **VirusTotal API Key is missing!**\n\nPlease add `VIRUSTOTAL_API_KEY=your_key` in your `.env` file.\nGet a free API key at: https://www.virustotal.com"
+
+    headers = {
+        "x-apikey": vt_key,
+        "Accept": "application/json"
+    }
+
+    # 1. File bytes scan (from Telegram attachment)
+    if file_bytes:
+        file_sha256 = hashlib.sha256(file_bytes).hexdigest()
+        filename_display = filename or f"file_{file_sha256[:8]}"
+        try:
+            r = requests.get(f"https://www.virustotal.com/api/v3/files/{file_sha256}", headers=headers, timeout=12)
+            if r.status_code == 200:
+                return _format_vt_file_report(r.json(), filename_display, file_sha256)
+            elif r.status_code == 404 and len(file_bytes) <= 32 * 1024 * 1024:
+                # Upload file to VirusTotal
+                files = {"file": (filename_display, file_bytes)}
+                up_res = requests.post("https://www.virustotal.com/api/v3/files", headers=headers, files=files, timeout=20)
+                if up_res.status_code in (200, 201):
+                    return f"🛡️ **VirusTotal File Uploaded & Queued**\n\n📄 **File:** `{filename_display}`\n🔑 **SHA256:** `{file_sha256}`\n⏳ Initial scan queued. Check live report:\nhttps://www.virustotal.com/gui/file/{file_sha256}"
+                else:
+                    return f"❌ Upload to VirusTotal failed with HTTP {up_res.status_code}."
+            elif r.status_code == 401:
+                return "❌ **Invalid VirusTotal API Key!** Please verify your key at virustotal.com."
+        except Exception as e:
+            return f"❌ VirusTotal scan error: {e}"
+
+    target_clean = (target or "").strip()
+    if not target_clean:
+        return "❌ Please provide a URL, domain, or file hash (or reply to a file)."
+
+    # 2. Check if target is a file hash
+    is_hash = bool(re.fullmatch(r"[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64}", target_clean))
+    if is_hash:
+        try:
+            r = requests.get(f"https://www.virustotal.com/api/v3/files/{target_clean.lower()}", headers=headers, timeout=12)
+            if r.status_code == 200:
+                return _format_vt_file_report(r.json(), "File Hash", target_clean)
+            elif r.status_code == 404:
+                return f"🔍 **VirusTotal:** Hash `{target_clean}` not found in VirusTotal database."
+            elif r.status_code == 401:
+                return "❌ **Invalid VirusTotal API Key!** Please verify your `VIRUSTOTAL_API_KEY`."
+            else:
+                return f"❌ VirusTotal returned HTTP {r.status_code}."
+        except Exception as e:
+            return f"❌ VirusTotal lookup failed: {e}"
+
+    # 3. URL scan
+    url = target_clean
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
+    try:
+        r = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=12)
+        if r.status_code == 404:
+            # Submit URL for scanning
+            post_r = requests.post("https://www.virustotal.com/api/v3/urls", headers=headers, data={"url": url}, timeout=12)
+            if post_r.status_code in (200, 201):
+                time.sleep(2)
+                r = requests.get(f"https://www.virustotal.com/api/v3/urls/{url_id}", headers=headers, timeout=12)
+
+        if r.status_code == 200:
+            return _format_vt_url_report(r.json(), url)
+        elif r.status_code == 401:
+            return "❌ **Invalid VirusTotal API Key!** Please check `VIRUSTOTAL_API_KEY` in .env."
+        else:
+            return _scan_url(url)
+    except Exception as e:
+        return f"❌ VirusTotal scan error: {e}"
 
 def _scan_url(url):
     if not url.startswith("http"):
@@ -2824,7 +3047,7 @@ HELP_CATEGORIES = {
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
     "🛡 Security & OSINT": [
-        ".harvester", ".theharvester", ".recon", ".scan", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
+        ".virus", ".vt", ".scan", ".harvester", ".theharvester", ".recon", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
         ".net", ".genpass", ".b64", ".hash", ".hex", ".binary", ".rot13", ".morse",
         ".ssl", ".headers", ".unshort", ".subdomains", ".httpstatus", ".urlencode",
         ".urldecode", ".uuid", ".jwt", ".cve"
@@ -2859,9 +3082,9 @@ HELP_CATEGORIES = {
         ".superscript", ".subscript", ".mirror"
     ],
     "🎉 Fun & Games": [
-        ".react", ".meme", ".korn", ".cat", ".dog", ".trivia", ".fact", ".horoscope",
+        ".react", ".meme", ".funny", ".roast", ".dog", ".trivia", ".fact", ".horoscope",
         ".country", ".anime", ".quote", ".joke", ".8ball", ".roll", ".flip",
-        ".reverse", ".slap", ".roast", ".compliment", ".dice", ".bored", ".insult",
+        ".reverse", ".slap", ".burn", ".compliment", ".dice", ".bored", ".insult",
         ".rps", ".truth", ".dare", ".hypnotize", ".hack"
     ],
     "💰 Crypto & Markets": [
@@ -3863,19 +4086,28 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(cap)
 
-    elif cmd == ".funny":
+    elif cmd in (".funny", ".korn"):
         loop = asyncio.get_event_loop()
         img, cap = await loop.run_in_executor(None, _random_subreddit_post, "Funnymemes")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
+        else:
+            await event.edit(cap)
 
-    elif cmd == ".roast":
+    elif cmd in (".roast", ".roastme"):
         loop = asyncio.get_event_loop()
         img, cap = await loop.run_in_executor(None, _random_subreddit_post, "RoastMe")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
+        else:
+            target = ""
+            if event.is_reply:
+                reply = await event.get_reply_message()
+                u = await client.get_entity(reply.sender_id)
+                target = f"**{getattr(u, 'first_name', 'User')}**, "
+            await event.edit(f"🔥 {target}{random.choice(ROASTS_LIST)}")
 
     elif cmd == ".dog":
         loop = asyncio.get_event_loop()
@@ -3986,11 +4218,38 @@ async def _cmd_dispatch(event):
         except Exception as e:
             await event.edit(f"❌ Error: {e}")
 
-    elif cmd == ".scan":
-        url = args_str or "https://google.com"
+    elif cmd in (".virus", ".vt", ".scan"):
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _scan_url, url)
-        await event.edit(res)
+        if event.is_reply:
+            reply = await event.get_reply_message()
+            if reply.media and (getattr(reply, "document", None) or getattr(reply, "file", None)):
+                await event.edit("⏳ **Downloading file to scan with VirusTotal...**")
+                try:
+                    file_bytes = await reply.download_media(file=bytes)
+                    filename = getattr(reply.file, "name", "file") if reply.file else "unknown_file"
+                    res = await loop.run_in_executor(None, _virustotal_scan, "", file_bytes, filename)
+                    await event.edit(res)
+                except Exception as e:
+                    await event.edit(f"❌ Failed to download and scan file: {e}")
+            elif reply.raw_text:
+                url_match = re.search(r"https?://\S+", reply.raw_text)
+                target = url_match.group(0) if url_match else reply.raw_text.strip().split()[0]
+                await event.edit("⏳ **Querying VirusTotal analysis...**")
+                res = await loop.run_in_executor(None, _virustotal_scan, target)
+                await event.edit(res)
+            else:
+                await event.edit("❌ Reply contains no text or media to scan.")
+        elif args_str:
+            target = args_str.strip()
+            await event.edit("⏳ **Querying VirusTotal analysis...**")
+            res = await loop.run_in_executor(None, _virustotal_scan, target)
+            await event.edit(res)
+        else:
+            await event.edit("""ℹ️ **VirusTotal Threat Scanner**
+
+• **Scan URL / Domain:** `.virus https://google.com`
+• **Scan File Hash:** `.virus <md5/sha1/sha256>`
+• **Scan APK / Document:** Reply to any file/APK and type `.virus`""")
 
     elif cmd == ".portfolio":
         parts = args_str.split(None, 2)
@@ -4649,7 +4908,7 @@ async def _cmd_dispatch(event):
         slaps = ["a large trout", "a mechanical keyboard", "a wet noodle", "a cybersecurity handbook", "a cold pizza slice"]
         await event.edit(f"👋 **{DEV_NAME}** slaps **{target}** with {random.choice(slaps)}! 💥")
 
-    elif cmd == ".roast":
+    elif cmd == ".burn":
         target = ""
         if event.is_reply:
             reply = await event.get_reply_message()
