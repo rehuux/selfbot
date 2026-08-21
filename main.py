@@ -1640,64 +1640,106 @@ def _random_meme():
     except Exception as e:
         return None, f"❌ Meme fetch failed: {e}"
 
-def _random_subreddit_post(subreddit):
-    sub = subreddit.strip().lstrip("r/").strip()
-    headers = {
-        "User-Agent": f"TelegramUserBot/{random.randint(1000, 9999)} (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json"
-    }
+_SUBREDDIT_BUFFER = {}
+_SEEN_SUBREDDIT_POSTS = set()
 
-    # Strategy 1: meme-api batch fetch (returns 40 items at once, randomly selected)
+def _fetch_subreddit_pool(sub):
+    """Fetches up to 100+ fresh image posts across various sorts and APIs."""
+    headers_list = [
+        {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", "Accept": "application/json"},
+        {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15", "Accept": "application/json"},
+        {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0", "Accept": "application/json"}
+    ]
+    posts = []
+
+    # 1. Try meme-api batch fetch (allows NSFW and SFW)
     try:
-        r = requests.get(f"https://meme-api.com/gimme/{sub}/40", timeout=10)
+        r = requests.get(f"https://meme-api.com/gimme/{sub}/50", timeout=8)
         if r.status_code == 200:
             d = r.json()
-            memes = d.get("memes", [])
-            if memes:
-                valid = [m for m in memes if m.get("url") and not m.get("nsfw", False)]
-                pool = valid if valid else memes
-                selected = random.choice(pool)
-                title = selected.get("title", "Post")
-                s_name = selected.get("subreddit", sub)
-                caption = f"😹 **{title}**\nr/{s_name}"
-                return selected["url"], caption
+            for m in d.get("memes", []):
+                u = m.get("url")
+                if u:
+                    t = m.get("title", "Post")
+                    s = m.get("subreddit", sub)
+                    posts.append((u, f"📷 **{t}**\nr/{s}"))
     except Exception as e:
         log.warning(f"meme-api batch fetch error for {sub}: {e}")
 
-    # Strategy 2: Direct Reddit JSON with random sorting (hot / top / new)
-    try:
-        sort_mode = random.choice(["hot", "top", "new"])
-        t_param = f"&t={random.choice(['day', 'week', 'month', 'all'])}" if sort_mode == "top" else ""
-        url = f"https://www.reddit.com/r/{sub}/{sort_mode}.json?limit=50{t_param}"
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            children = data.get("data", {}).get("children", [])
-            candidates = []
-            for child in children:
-                p = child.get("data", {})
-                img_url = p.get("url_overridden_by_dest") or p.get("url", "")
-                title = p.get("title", "")
-                is_img = any(img_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")) or "i.redd.it" in img_url or "i.imgur.com" in img_url
-                if is_img and not p.get("over_18", False):
-                    candidates.append((img_url, title))
-            if candidates:
-                chosen_url, chosen_title = random.choice(candidates)
-                caption = f"📷 **{chosen_title}**\nr/{sub}"
-                return chosen_url, caption
-    except Exception as e:
-        log.warning(f"Reddit direct JSON error for {sub}: {e}")
+    # 2. Try Reddit public JSON endpoints with multiple sorts and cache buster
+    sort_modes = [
+        ("top", "t=all"),
+        ("top", "t=year"),
+        ("top", "t=month"),
+        ("hot", ""),
+        ("new", ""),
+        ("rising", "")
+    ]
+    random.shuffle(sort_modes)
 
-    # Strategy 3: Single meme-api fallback
-    try:
-        r = requests.get(f"https://meme-api.com/gimme/{sub}", timeout=10)
-        if r.status_code == 200:
-            d = r.json()
-            if d.get("url"):
-                caption = f"😹 **{d.get('title', 'Post')}**\nr/{d.get('subreddit', sub)}"
-                return d["url"], caption
-    except Exception as e:
-        log.warning(f"Single meme-api fallback error for {sub}: {e}")
+    for sort_mode, extra_param in sort_modes[:3]:
+        try:
+            cb = int(time.time()) + random.randint(100, 99999)
+            param_str = f"limit=100&_cb={cb}"
+            if extra_param:
+                param_str += f"&{extra_param}"
+            url = f"https://www.reddit.com/r/{sub}/{sort_mode}.json?{param_str}"
+            headers = random.choice(headers_list)
+            r = requests.get(url, headers=headers, timeout=8)
+            if r.status_code == 200:
+                data = r.json()
+                children = data.get("data", {}).get("children", [])
+                for child in children:
+                    p = child.get("data", {})
+                    img_url = p.get("url_overridden_by_dest") or p.get("url", "")
+                    title = p.get("title", "Post")
+                    # Check for gallery or direct image links
+                    if not img_url and p.get("preview", {}).get("images"):
+                        img_url = p["preview"]["images"][0].get("source", {}).get("url", "").replace("&amp;", "&")
+                    is_img = any(img_url.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp")) or "i.redd.it" in img_url or "i.imgur.com" in img_url or "preview.redd.it" in img_url
+                    if is_img:
+                        posts.append((img_url, f"📷 **{title}**\nr/{sub}"))
+        except Exception as e:
+            log.warning(f"Reddit JSON error ({sort_mode}) for {sub}: {e}")
+
+    # Fallback to single meme-api if nothing found
+    if not posts:
+        try:
+            r = requests.get(f"https://meme-api.com/gimme/{sub}", timeout=8)
+            if r.status_code == 200:
+                d = r.json()
+                if d.get("url"):
+                    posts.append((d["url"], f"📷 **{d.get('title', 'Post')}**\nr/{d.get('subreddit', sub)}"))
+        except Exception:
+            pass
+
+    return posts
+
+def _random_subreddit_post(subreddit):
+    global _SUBREDDIT_BUFFER, _SEEN_SUBREDDIT_POSTS
+    sub = subreddit.strip().lstrip("r/").strip()
+
+    # If buffer is empty or low, fetch a fresh pool
+    buf = _SUBREDDIT_BUFFER.get(sub, [])
+    if len(buf) < 5:
+        fresh_posts = _fetch_subreddit_pool(sub)
+        if fresh_posts:
+            # Filter out posts seen recently if possible
+            unseen = [p for p in fresh_posts if p[0] not in _SEEN_SUBREDDIT_POSTS]
+            chosen_pool = unseen if unseen else fresh_posts
+            random.shuffle(chosen_pool)
+            buf.extend(chosen_pool)
+            _SUBREDDIT_BUFFER[sub] = buf
+
+    # Pop an item that hasn't been seen recently
+    if buf:
+        # Pick random item from buffer
+        chosen_idx = random.randrange(len(buf))
+        chosen_url, chosen_caption = buf.pop(chosen_idx)
+        _SEEN_SUBREDDIT_POSTS.add(chosen_url)
+        if len(_SEEN_SUBREDDIT_POSTS) > 500:
+            _SEEN_SUBREDDIT_POSTS.clear()
+        return chosen_url, chosen_caption
 
     return None, f"❌ Couldn't fetch a post from r/{sub} right now."
 
