@@ -2022,7 +2022,7 @@ def _download_tts(text: str, lang: str = "en", voice_id: Optional[str] = None) -
     # Strategy 1: ElevenLabs AI Voice (High-Fidelity Neural Speech)
     if ELEVENLABS_API_KEY:
         try:
-            target_voice = voice_id or ELEVENLABS_VOICE_ID or "lxYfHSkYm1EzQzGhdbfc"
+            target_voice = voice_id or ELEVENLABS_VOICE_ID or "EXAVITQu4vr4xnSDxMaL"
             if ELEVENLABS_MODEL_ID:
                 target_model = ELEVENLABS_MODEL_ID
             elif len(text) < 80:
