@@ -4150,12 +4150,12 @@ async def _cmd_dispatch(event):
         if not query:
             await event.edit("❌ **Usage:** `.ask <question>` or reply to a message with `.ask`")
             return
-        await event.edit("🤖 **Gemini is thinking...**")
+        await event.edit("🤖 **Rehu is thinking...**")
         loop = asyncio.get_event_loop()
         ans = await loop.run_in_executor(None, _gemini_generate, query)
         if len(ans) > 4000:
             ans = ans[:3990] + "...\n*(truncated)*"
-        await event.edit(f"🤖 **Gemini AI:**\n\n{ans}")
+        await event.edit(f"🤖 **Rehu AI:**\n\n{ans}")
 
     elif cmd in (".code", ".coder", ".devai"):
         query = args_str.strip()
@@ -4165,7 +4165,7 @@ async def _cmd_dispatch(event):
         if not query:
             await event.edit("❌ **Usage:** `.code <what code to write>` (e.g. `.code Telegram bot in python`)")
             return
-        await event.edit("💻 **Writing code with Gemini...**")
+        await event.edit("💻 **Writing code with Rehu...**")
         loop = asyncio.get_event_loop()
         ans = await loop.run_in_executor(None, _gemini_code, query)
         if len(ans) > 4000:
@@ -4287,7 +4287,7 @@ async def _cmd_dispatch(event):
         await event.edit("🖋️ **Likh rahe hain Shayari...**")
         loop = asyncio.get_event_loop()
         ans = await loop.run_in_executor(None, _gemini_shayari, topic)
-        await event.edit(f"🖋️ **Shayari by Gemini:**\n\n{ans}")
+        await event.edit(f"🖋️ **Shayari by rehu:**\n\n{ans}")
 
     elif cmd in (".factcheck", ".checkclaim"):
         claim = args_str.strip()
@@ -4430,7 +4430,7 @@ async def _cmd_dispatch(event):
                 await client.send_file(
                     event.chat_id,
                     audio_path,
-                    caption=f"🎵 **{title}** — `{artist}`\n⚡ _Sent via SelfBot Music Engine_",
+                    caption=f"🎧 **{title}** — `{artist}`\n💢 Powered by @gotweeds",
                     attributes=[audio_attr]
                 )
                 await event.delete()
