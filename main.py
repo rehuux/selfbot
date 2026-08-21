@@ -3923,14 +3923,6 @@ async def _cmd_dispatch(event):
         except Exception:
             await event.edit("❌ Invalid expression.")
 
-    elif cmd == ".wiki":
-        if not args_str:
-            await event.edit("❌ Usage: `.wiki query`")
-            return
-        loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, _wiki_lookup, args_str)
-        await event.edit(res)
-
     elif cmd in (".tr", ".translate"):
         lang = args[0].lower() if args else "en"
         content = " ".join(args[1:]) if len(args) > 1 else ((await event.get_reply_message()).text if event.is_reply else "")
@@ -4029,7 +4021,7 @@ async def _cmd_dispatch(event):
                 await client.send_file(
                     event.chat_id,
                     audio_path,
-                    caption=f"🎧 **{title}** — `{artist}`\n⚡ Powered by @gotweeds",
+                    caption=f"🎵 **{title}** — `{artist}`\n⚡ _Sent via SelfBot Music Engine_",
                     attributes=[audio_attr]
                 )
                 await event.delete()
