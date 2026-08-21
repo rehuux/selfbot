@@ -3764,7 +3764,7 @@ async def _cmd_dispatch(event):
                 await client.send_file(
                     event.chat_id,
                     audio_path,
-                    caption=f"🎵 **{title}** — `{artist}`\n⚡ _Sent via SelfBot Music Engine_",
+                    caption=f"🎧 **{title}** — `{artist}`\n⚡ Powered by @gotweeds",
                     attributes=[audio_attr]
                 )
                 await event.delete()
@@ -3863,16 +3863,16 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(cap)
 
-    elif cmd == ".korn":
+    elif cmd == ".funny":
         loop = asyncio.get_event_loop()
-        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "Eating_Pussy_GIFs")
+        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "Funnymemes")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
 
-    elif cmd == ".cat":
+    elif cmd == ".roast":
         loop = asyncio.get_event_loop()
-        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "nsfwgif")
+        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "RoastMe")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
