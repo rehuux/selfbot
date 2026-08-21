@@ -3865,14 +3865,17 @@ async def _cmd_dispatch(event):
 
     elif cmd == ".korn":
         loop = asyncio.get_event_loop()
-        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "randi_khanna")
+        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "Eating_Pussy_GIFs")
         if img:
             await client.send_file(event.chat_id, img, caption=cap)
             await event.delete()
 
     elif cmd == ".cat":
-        await client.send_file(event.chat_id, "https://cataas.com/cat", caption="🐱 **Meow!**")
-        await event.delete()
+        loop = asyncio.get_event_loop()
+        img, cap = await loop.run_in_executor(None, _random_subreddit_post, "nsfwgif")
+        if img:
+            await client.send_file(event.chat_id, img, caption=cap)
+            await event.delete()
 
     elif cmd == ".dog":
         loop = asyncio.get_event_loop()
