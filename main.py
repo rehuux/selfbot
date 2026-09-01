@@ -162,7 +162,7 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
 
     footer = (
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "👨‍💻 **Developer:** [Syed Rehan](https://t.me/gotweeds)  •  "
+        "👨‍💻 **Dev:** [Syed Rehan](https://t.me/gotweeds)  •  "
         "📢 **Channel:** [RehuSzr](https://t.me/RehuSzr)\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
@@ -170,7 +170,7 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
     if not results:
         return (
             f"╔══════════════════════════╗\n"
-            f"    **REHU OSINT LOOKUP**\n"
+            f"   🔍 **REHU OSINT LOOKUP**\n"
             f"╚══════════════════════════╝\n"
             f"🎯 **Target Query:** `{query}`\n"
             f"⏱️ **Latency:** `{elapsed_sec:.2f}s`\n"
@@ -182,7 +182,7 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
 
     msg = [
         "╔══════════════════════════╗",
-        "    **REHU OSINT LOOKUP**",
+        "   🔍 **REHU OSINT LOOKUP**",
         "╚══════════════════════════╝",
         f"🎯 **Target Query:** `{query}`",
         f"📊 **Records Found:** `{count}`",
@@ -214,7 +214,7 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
         if rec.get("pincode"):
             msg.append(f"  📮 **Pincode:** `{rec['pincode']}`")
         if rec.get("source"):
-            msg.append(f"  🔍 **Source Node:** `{str(rec['source']).upper()}`")
+            msg.append(f"  🔍 **Source:** `{str(rec['source']).upper()}`")
 
     msg.append(f"\n{footer}")
     return "\n".join(msg)
