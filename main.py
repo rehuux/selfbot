@@ -155,33 +155,33 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
         return f"❌ **Error:** Invalid response received for `{query}`."
 
     if data.get("error"):
-        return f"⏳ **Rehu-Iram Notice:** `{data['error']}` for query `{query}`."
+        return f"⏳ **Rehu Notice:** `{data['error']}` for query `{query}`."
 
     results = data.get("results") or []
     count = data.get("count") or len(results)
-    dev = data.get("credit", {}).get("developer", "rehuu")
+    dev = data.get("credit", {}).get("developer", "@gotweeds")
     channel = data.get("credit", {}).get("channel", "@RehuSzr")
 
     if not results:
         return (
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔍 **Rehu-Iram Intelligence Search**\n"
+            f"🔍 **Rehu Lookup**\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"❌ **No matching records found** for query: `{query}`\n"
             f"⏱️ **Time taken:** `{elapsed_sec:.2f}s`\n"
-            f"✓ **Database:** `ICMR + HITEK OSINT Clusters`\n"
+            f"✓ **Database:** `ICMR + HITEK`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👨‍💻 **Developer:** `{dev}` | **Channel:** `{channel}`"
         )
 
     msg = [
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"🔍 **Rehu-Iram Intelligence Search**",
+        f"🔍 **Rehu Lookup**",
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"✓ **Target Query:** `{query}`",
         f"✓ **Records Found:** `{count}`",
         f"✓ **Latency:** `{elapsed_sec:.2f}s`",
-        f"✓ **Database:** `ICMR + HITEK Clusters`",
+        f"✓ **Database:** `ICMR + HITEK`",
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ]
 
