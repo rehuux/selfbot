@@ -155,64 +155,68 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
         return f"❌ **Error:** Invalid response received for `{query}`."
 
     if data.get("error"):
-        return f"⏳ **Rehu Notice:** `{data['error']}` for query `{query}`."
+        return f"⏳ **Rehu Osint Notice:** `{data['error']}` for query `{query}`."
 
     results = data.get("results") or []
     count = data.get("count") or len(results)
-    dev = data.get("credit", {}).get("developer", "@gotweeds")
-    channel = data.get("credit", {}).get("channel", "@RehuSzr")
+
+    footer = (
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "👨‍💻 **Developer:** [Syed Rehan](https://t.me/gotweeds)  •  "
+        "📢 **Channel:** [RehuSzr](https://t.me/RehuSzr)\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
 
     if not results:
         return (
+            f"╔══════════════════════════╗\n"
+            f"    **REHU OSINT LOOKUP**\n"
+            f"╚══════════════════════════╝\n"
+            f"🎯 **Target Query:** `{query}`\n"
+            f"⏱️ **Latency:** `{elapsed_sec:.2f}s`\n"
+            f"📊 **Database:** `ICMR + HITEK`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔍 **Rehu Lookup**\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"❌ **No matching records found** for query: `{query}`\n"
-            f"⏱️ **Time taken:** `{elapsed_sec:.2f}s`\n"
-            f"✓ **Database:** `ICMR + HITEK`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👨‍💻 **Developer:** `{dev}` | **Channel:** `{channel}`"
+            f"❌ **No matching records found in database.**\n"
+            f"{footer}"
         )
 
     msg = [
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"🔍 **Rehu Lookup**",
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"✓ **Target Query:** `{query}`",
-        f"✓ **Records Found:** `{count}`",
-        f"✓ **Latency:** `{elapsed_sec:.2f}s`",
-        f"✓ **Database:** `ICMR + HITEK`",
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        "╔══════════════════════════╗",
+        "    **REHU OSINT LOOKUP**",
+        "╚══════════════════════════╝",
+        f"🎯 **Target Query:** `{query}`",
+        f"📊 **Records Found:** `{count}`",
+        f"⏱️ **Latency:** `{elapsed_sec:.2f}s`",
+        f"🛡️ **Cluster:** `ICMR + HITEK Verified`",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ]
 
     for idx, rec in enumerate(results[:5], 1):
-        msg.append(f"\n📋 **Record #{idx}**")
+        msg.append(f"\n📇 **RECORD #{idx}**")
         if rec.get("name"):
-            msg.append(f"• **Name:** `{rec['name']}`")
+            msg.append(f"  👤 **Full Name:** `{rec['name']}`")
         if rec.get("fathersName"):
-            msg.append(f"• **Father's Name:** `{rec['fathersName']}`")
+            msg.append(f"  👴 **Father's Name:** `{rec['fathersName']}`")
         if rec.get("phoneNumber"):
-            msg.append(f"• **Phone:** `{rec['phoneNumber']}`")
-        if rec.get("aadharNumber"):
-            msg.append(f"• **Aadhar:** `{rec['aadharNumber']}`")
+            msg.append(f"  📱 **Phone:** `{rec['phoneNumber']}`")
         if rec.get("otherNumber"):
-            msg.append(f"• **Alt Phone:** `{rec['otherNumber']}`")
+            msg.append(f"  📞 **Alt Phone:** `{rec['otherNumber']}`")
+        if rec.get("aadharNumber"):
+            msg.append(f"  🆔 **Aadhar:** `{rec['aadharNumber']}`")
         if rec.get("address"):
-            msg.append(f"• **Address:** `{rec['address']}`")
+            msg.append(f"  🏠 **Address:** `{rec['address']}`")
         if rec.get("town"):
-            msg.append(f"• **Town:** `{rec['town']}`")
+            msg.append(f"  🏙️ **Town:** `{rec['town']}`")
         if rec.get("district"):
-            msg.append(f"• **District:** `{rec['district']}`")
+            msg.append(f"  📍 **District:** `{rec['district']}`")
         if rec.get("state"):
-            msg.append(f"• **State:** `{rec['state']}`")
+            msg.append(f"  🗺️ **State:** `{rec['state']}`")
         if rec.get("pincode"):
-            msg.append(f"• **Pincode:** `{rec['pincode']}`")
+            msg.append(f"  📮 **Pincode:** `{rec['pincode']}`")
         if rec.get("source"):
-            msg.append(f"• **Source:** `{str(rec['source']).upper()}`")
+            msg.append(f"  🔍 **Source Node:** `{str(rec['source']).upper()}`")
 
-    msg.append(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    msg.append(f"👨‍💻 **Developer:** `{dev}` | **Channel:** `{channel}`")
-    msg.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    msg.append(f"\n{footer}")
     return "\n".join(msg)
 
 
