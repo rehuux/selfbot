@@ -118,6 +118,104 @@ API_HASH = os.environ.get("API_HASH", "")
 PHONE = os.environ.get("PHONE", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "").strip()
 
+# ------------------------------------------------------------------
+# Rehu-Iram Intelligence Search Engine
+# ------------------------------------------------------------------
+REHU_API_URL = "https://rehu-iram.onrender.com/search"
+REHU_TIMEOUT_SEC = 65
+
+def _query_rehu_api_sync(query: str, limit: int = 10):
+    clean_query = query.strip()
+    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(
+            REHU_API_URL,
+            params={"q": clean_query, "limit": limit, "pretty": "true"},
+            headers=headers,
+            timeout=REHU_TIMEOUT_SEC
+        )
+        if r.status_code == 200:
+            return r.json()
+        r2 = requests.get(
+            REHU_API_URL,
+            params={"mobile": clean_query, "limit": limit, "pretty": "true"},
+            headers=headers,
+            timeout=REHU_TIMEOUT_SEC
+        )
+        if r2.status_code == 200:
+            return r2.json()
+        return {"success": False, "error": f"HTTP {r2.status_code}"}
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Query timed out. Render service is waking up, please retry."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
+    if not data or not isinstance(data, dict):
+        return f"❌ **Error:** Invalid response received for `{query}`."
+
+    if data.get("error"):
+        return f"⏳ **Rehu-Iram Notice:** `{data['error']}` for query `{query}`."
+
+    results = data.get("results") or []
+    count = data.get("count") or len(results)
+    dev = data.get("credit", {}).get("developer", "rehuu")
+    channel = data.get("credit", {}).get("channel", "@RehuSzr")
+
+    if not results:
+        return (
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔍 **Rehu-Iram Intelligence Search**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"❌ **No matching records found** for query: `{query}`\n"
+            f"⏱️ **Time taken:** `{elapsed_sec:.2f}s`\n"
+            f"✓ **Database:** `ICMR + HITEK OSINT Clusters`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👨‍💻 **Developer:** `{dev}` | **Channel:** `{channel}`"
+        )
+
+    msg = [
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"🔍 **Rehu-Iram Intelligence Search**",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"✓ **Target Query:** `{query}`",
+        f"✓ **Records Found:** `{count}`",
+        f"✓ **Latency:** `{elapsed_sec:.2f}s`",
+        f"✓ **Database:** `ICMR + HITEK Clusters`",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    ]
+
+    for idx, rec in enumerate(results[:5], 1):
+        msg.append(f"\n📋 **Record #{idx}**")
+        if rec.get("name"):
+            msg.append(f"• **Name:** `{rec['name']}`")
+        if rec.get("fathersName"):
+            msg.append(f"• **Father's Name:** `{rec['fathersName']}`")
+        if rec.get("phoneNumber"):
+            msg.append(f"• **Phone:** `{rec['phoneNumber']}`")
+        if rec.get("aadharNumber"):
+            msg.append(f"• **Aadhar:** `{rec['aadharNumber']}`")
+        if rec.get("otherNumber"):
+            msg.append(f"• **Alt Phone:** `{rec['otherNumber']}`")
+        if rec.get("address"):
+            msg.append(f"• **Address:** `{rec['address']}`")
+        if rec.get("town"):
+            msg.append(f"• **Town:** `{rec['town']}`")
+        if rec.get("district"):
+            msg.append(f"• **District:** `{rec['district']}`")
+        if rec.get("state"):
+            msg.append(f"• **State:** `{rec['state']}`")
+        if rec.get("pincode"):
+            msg.append(f"• **Pincode:** `{rec['pincode']}`")
+        if rec.get("source"):
+            msg.append(f"• **Source:** `{str(rec['source']).upper()}`")
+
+    msg.append(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    msg.append(f"👨‍💻 **Developer:** `{dev}` | **Channel:** `{channel}`")
+    msg.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    return "\n".join(msg)
+
+
 DATA_FILE = "selfbot_data.json"
 ERROR_LOG_FILE = "errors.log"
 NOTES_FILE = "notes_data.json"
@@ -3295,7 +3393,7 @@ HELP_CATEGORIES = {
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
     "🛡 Security & OSINT": [
-        ".virus", ".vt", ".scan", ".harvester", ".theharvester", ".recon", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
+        ".search", ".num", ".lookup", ".rehu", ".iram", ".virus", ".vt", ".scan", ".harvester", ".theharvester", ".recon", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
         ".net", ".genpass", ".b64", ".hash", ".hex", ".binary", ".rot13", ".morse",
         ".ssl", ".headers", ".unshort", ".subdomains", ".httpstatus", ".urlencode",
         ".urldecode", ".uuid", ".jwt", ".cve"
@@ -3442,7 +3540,26 @@ async def _cmd_dispatch(event):
     args_str = raw[len(tokens[0]):].strip()
 
     # System & Dev
-    if cmd == ".ping":
+
+    if cmd in (".search", ".num", ".lookup", ".rehu", ".iram", ".icmr", ".hitek"):
+        target_num = args_str.strip()
+        if not target_num and event.is_reply:
+            reply = await event.get_reply_message()
+            target_num = (reply.raw_text or reply.text or "").strip()
+        if not target_num:
+            await event.edit(f"❌ **Usage:** `{cmd} <10-digit phone number or name>`\n_Example:_ `{cmd} 9876543210`")
+            return
+        clean_num = re.sub(r"\D", "", target_num)
+        query_val = clean_num[-10:] if len(clean_num) >= 10 else target_num
+        start_time = time.time()
+        await event.edit(f"🔍 **Searching Rehu-Iram Database for:** `{query_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val)
+        elapsed = time.time() - start_time
+        res_text = _format_rehu_response(query_val, data, elapsed)
+        await event.edit(res_text)
+
+    elif cmd == ".ping":
         start = time.time()
         msg = await event.edit("🏓 Pinging...")
         latency_ms = int((time.time() - start) * 1000)
@@ -6020,6 +6137,18 @@ async def _cmd_dispatch(event):
 async def cmd_handler(event):
     raw_text = event.raw_text.strip()
     # Note: AFK is NOT auto-disabled when owner messages, persistent until .back
+
+    # Auto-search if outgoing message is a 10-digit phone number
+    if re.fullmatch(r"(?:\+91|0)?([6-9]\d{9}|\d{10})", raw_text):
+        clean_digits = re.sub(r"\D", "", raw_text)[-10:]
+        start_time = time.time()
+        await event.edit(f"🔍 **Searching Rehu-Iram Database for:** `{clean_digits}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, clean_digits)
+        elapsed = time.time() - start_time
+        res_text = _format_rehu_response(clean_digits, data, elapsed)
+        await event.edit(res_text)
+        return
 
     if not raw_text.startswith("."):
         if ghost_mode.enabled:
