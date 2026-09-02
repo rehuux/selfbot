@@ -6146,7 +6146,7 @@ async def cmd_handler(event):
     if re.fullmatch(r"(?:\+91|0)?([6-9]\d{9}|\d{10})", raw_text):
         clean_digits = re.sub(r"\D", "", raw_text)[-10:]
         start_time = time.time()
-        await event.edit(f"🔍 **Searching Rehu-Iram Database for:** `{clean_digits}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        await event.edit(f"🔍 **Searching Database for:** `{clean_digits}`...\n⏳ Querying ICMR + HITEK..")
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, _query_rehu_api_sync, clean_digits)
         elapsed = time.time() - start_time
