@@ -3556,7 +3556,7 @@ async def _cmd_dispatch(event):
         clean_num = re.sub(r"\D", "", target_num)
         query_val = clean_num[-10:] if len(clean_num) >= 10 else target_num
         start_time = time.time()
-        await event.edit(f"🔍 **Searching Rehu-Iram Database for:** `{query_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        await event.edit(f"🔍 **Searching Database for:** `{query_val}`...\n⏳ Querying ICMR + HITEK")
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val)
         elapsed = time.time() - start_time
