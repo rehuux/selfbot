@@ -121,15 +121,41 @@ SESSION_STRING = os.environ.get("SESSION_STRING", "").strip()
 # ------------------------------------------------------------------
 # Rehu-Iram Intelligence Search Engine
 # ------------------------------------------------------------------
-REHU_API_URL = "https://rehu-iram.onrender.com/search"
+REHU_API_URL = os.environ.get("REHU_API_URL", "").strip()
 REHU_TIMEOUT_SEC = 65
 
-def _query_rehu_api_sync(query: str, limit: int = 10):
+def _query_rehu_api_sync(query: str, field: Optional[str] = None, limit: int = 10):
+    if not REHU_API_URL:
+        return {
+            "success": False,
+            "error": "REHU_API_URL environment variable is not configured! Please set `REHU_API_URL` in your Render Environment Variables."
+        }
     clean_query = query.strip()
     headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    endpoint = REHU_API_URL if REHU_API_URL.endswith("/search") else f"{REHU_API_URL.rstrip('/')}/search"
+
+    # If specific field is requested (e.g., 'aadharNumber', 'phoneNumber', 'name'):
+    if field:
+        try:
+            r = requests.get(
+                endpoint,
+                params={"field": field, "q": clean_query, "limit": limit, "pretty": "true"},
+                headers=headers,
+                timeout=REHU_TIMEOUT_SEC
+            )
+            if r.status_code == 200:
+                res = r.json()
+                if res.get("results") or res.get("count"):
+                    return res
+        except requests.exceptions.Timeout:
+            return {"success": False, "error": "Query timed out. Render service is waking up, please retry."}
+        except Exception:
+            pass
+
+    # General 'q' param
     try:
         r = requests.get(
-            REHU_API_URL,
+            endpoint,
             params={"q": clean_query, "limit": limit, "pretty": "true"},
             headers=headers,
             timeout=REHU_TIMEOUT_SEC
@@ -137,7 +163,7 @@ def _query_rehu_api_sync(query: str, limit: int = 10):
         if r.status_code == 200:
             return r.json()
         r2 = requests.get(
-            REHU_API_URL,
+            endpoint,
             params={"mobile": clean_query, "limit": limit, "pretty": "true"},
             headers=headers,
             timeout=REHU_TIMEOUT_SEC
@@ -150,44 +176,46 @@ def _query_rehu_api_sync(query: str, limit: int = 10):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
+def _format_rehu_response(query: str, data: dict, elapsed_sec: float, field_label: Optional[str] = None) -> str:
     if not data or not isinstance(data, dict):
         return f"❌ **Error:** Invalid response received for `{query}`."
 
     if data.get("error"):
-        return f"⏳ **Rehu Osint Notice:** `{data['error']}` for query `{query}`."
+        return f"⏳ **Rehu-Iram Notice:** `{data['error']}` for query `{query}`."
 
     results = data.get("results") or []
     count = data.get("count") or len(results)
 
     footer = (
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "👨‍💻 **Dev:** [Syed Rehan](https://t.me/gotweeds)  •  "
+        "👨‍💻 **Developer:** [Syed Rehan](https://t.me/gotweeds)  •  "
         "📢 **Channel:** [RehuSzr](https://t.me/RehuSzr)\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
+    field_suffix = f" • **Field:** `{field_label}`" if field_label else ""
+
     if not results:
         return (
             f"╔══════════════════════════╗\n"
-            f"   🔍 **REHU OSINT LOOKUP**\n"
+            f"  ⚡ **REHU-IRAM INTELLIGENCE**\n"
             f"╚══════════════════════════╝\n"
-            f"🎯 **Target Query:** `{query}`\n"
+            f"🎯 **Target Query:** `{query}`{field_suffix}\n"
             f"⏱️ **Latency:** `{elapsed_sec:.2f}s`\n"
-            f"📊 **Database:** `ICMR + HITEK`\n"
+            f"📊 **Database:** `ICMR + HITEK OSINT Clusters`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"❌ **No matching records found in database.**\n"
+            f"❌ **No matching records found in intelligence database.**\n"
             f"{footer}"
         )
 
     msg = [
         "╔══════════════════════════╗",
-        "   🔍 **REHU OSINT LOOKUP**",
+        "  ⚡ **REHU-IRAM INTELLIGENCE**",
         "╚══════════════════════════╝",
-        f"🎯 **Target Query:** `{query}`",
+        f"🎯 **Target Query:** `{query}`{field_suffix}",
         f"📊 **Records Found:** `{count}`",
         f"⏱️ **Latency:** `{elapsed_sec:.2f}s`",
-        f"🛡️ **Cluster:** `ICMR + HITEK Verified`",
+        f"🛡️ **Cluster:** `ICMR + HITEK Verified Base`",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━"
     ]
 
@@ -214,7 +242,7 @@ def _format_rehu_response(query: str, data: dict, elapsed_sec: float) -> str:
         if rec.get("pincode"):
             msg.append(f"  📮 **Pincode:** `{rec['pincode']}`")
         if rec.get("source"):
-            msg.append(f"  🔍 **Source:** `{str(rec['source']).upper()}`")
+            msg.append(f"  🔍 **Source Node:** `{str(rec['source']).upper()}`")
 
     msg.append(f"\n{footer}")
     return "\n".join(msg)
@@ -3397,7 +3425,7 @@ HELP_CATEGORIES = {
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
     "🛡 Security & OSINT": [
-        ".search", ".num", ".lookup", ".rehu", ".iram", ".virus", ".vt", ".scan", ".harvester", ".theharvester", ".recon", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
+        ".search", ".num", ".phone", ".aadhar", ".adhr", ".name", ".lookup", ".rehu", ".iram", ".virus", ".vt", ".scan", ".harvester", ".theharvester", ".recon", ".osint", ".ip", ".myip", ".bin", ".whois", ".dns", ".secret",
         ".net", ".genpass", ".b64", ".hash", ".hex", ".binary", ".rot13", ".morse",
         ".ssl", ".headers", ".unshort", ".subdomains", ".httpstatus", ".urlencode",
         ".urldecode", ".uuid", ".jwt", ".cve"
@@ -3545,22 +3573,94 @@ async def _cmd_dispatch(event):
 
     # System & Dev
 
-    if cmd in (".search", ".num", ".lookup", ".rehu", ".iram", ".icmr", ".hitek"):
+    # Rehu-Iram Intelligence Search Commands
+    if cmd in (".aadhar", ".adhr", ".uidai"):
+        target_val = args_str.strip()
+        if not target_val and event.is_reply:
+            reply = await event.get_reply_message()
+            target_val = (reply.raw_text or reply.text or "").strip()
+        if not target_val:
+            await event.edit(f"❌ **Usage:** `{cmd} <12-digit aadhar number>`\n_Example:_ `{cmd} 867268486795`")
+            return
+        clean_val = re.sub(r"\D", "", target_val)
+        query_val = clean_val if len(clean_val) >= 12 else target_val
+        start_time = time.time()
+        await event.edit(f"🔍 **Searching Aadhar Database for:** `{query_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val, "aadharNumber")
+        elapsed = time.time() - start_time
+        res_text = _format_rehu_response(query_val, data, elapsed, "Aadhar")
+        await event.edit(res_text)
+
+    elif cmd in (".num", ".phone", ".mobile"):
+        target_val = args_str.strip()
+        if not target_val and event.is_reply:
+            reply = await event.get_reply_message()
+            target_val = (reply.raw_text or reply.text or "").strip()
+        if not target_val:
+            await event.edit(f"❌ **Usage:** `{cmd} <10-digit phone number>`\n_Example:_ `{cmd} 9876543210`")
+            return
+        clean_num = re.sub(r"\D", "", target_val)
+        query_val = clean_num[-10:] if len(clean_num) >= 10 else target_val
+        start_time = time.time()
+        await event.edit(f"🔍 **Searching Phone Database for:** `{query_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val, "phoneNumber")
+        elapsed = time.time() - start_time
+        res_text = _format_rehu_response(query_val, data, elapsed, "Phone")
+        await event.edit(res_text)
+
+    elif cmd == ".name":
+        target_val = args_str.strip()
+        if not target_val and event.is_reply:
+            reply = await event.get_reply_message()
+            target_val = (reply.raw_text or reply.text or "").strip()
+        if not target_val:
+            await event.edit(f"❌ **Usage:** `{cmd} <full name>`\n_Example:_ `{cmd} Rahul Sharma`")
+            return
+        start_time = time.time()
+        await event.edit(f"🔍 **Searching Name Database for:** `{target_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, target_val, "name")
+        elapsed = time.time() - start_time
+        res_text = _format_rehu_response(target_val, data, elapsed, "Name")
+        await event.edit(res_text)
+
+    elif cmd in (".search", ".lookup", ".rehu", ".iram", ".icmr", ".hitek"):
         target_num = args_str.strip()
         if not target_num and event.is_reply:
             reply = await event.get_reply_message()
             target_num = (reply.raw_text or reply.text or "").strip()
         if not target_num:
-            await event.edit(f"❌ **Usage:** `{cmd} <10-digit phone number or name>`\n_Example:_ `{cmd} 9876543210`")
+            usage_msg = (
+                f"❌ **Usage:** `{cmd} <phone/aadhar/name>`\n"
+                f"_Examples:_\n"
+                f"• `{cmd} 9876543210` (Phone)\n"
+                f"• `{cmd} 867268486795` (Aadhar)\n"
+                f"• `{cmd} Rahul Sharma` (Name)"
+            )
+            await event.edit(usage_msg)
             return
-        clean_num = re.sub(r"\D", "", target_num)
-        query_val = clean_num[-10:] if len(clean_num) >= 10 else target_num
+        digits_only = re.sub(r"\D", "", target_num)
+        field = None
+        field_lbl = None
+        if len(digits_only) == 12:
+            field = "aadharNumber"
+            field_lbl = "Aadhar"
+            query_val = digits_only
+        elif len(digits_only) >= 10:
+            field = "phoneNumber"
+            field_lbl = "Phone"
+            query_val = digits_only[-10:]
+        else:
+            query_val = target_num
+
         start_time = time.time()
-        await event.edit(f"🔍 **Searching Database for:** `{query_val}`...\n⏳ Querying ICMR + HITEK")
+        await event.edit(f"🔍 **Searching Rehu-Iram Database for:** `{query_val}`...\n⏳ _Querying ICMR + HITEK clusters..._")
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val)
+        data = await loop.run_in_executor(None, _query_rehu_api_sync, query_val, field)
         elapsed = time.time() - start_time
-        res_text = _format_rehu_response(query_val, data, elapsed)
+        res_text = _format_rehu_response(query_val, data, elapsed, field_lbl)
         await event.edit(res_text)
 
     elif cmd == ".ping":
@@ -6141,18 +6241,6 @@ async def _cmd_dispatch(event):
 async def cmd_handler(event):
     raw_text = event.raw_text.strip()
     # Note: AFK is NOT auto-disabled when owner messages, persistent until .back
-
-    # Auto-search if outgoing message is a 10-digit phone number
-    if re.fullmatch(r"(?:\+91|0)?([6-9]\d{9}|\d{10})", raw_text):
-        clean_digits = re.sub(r"\D", "", raw_text)[-10:]
-        start_time = time.time()
-        await event.edit(f"🔍 **Searching Database for:** `{clean_digits}`...\n⏳ Querying ICMR + HITEK..")
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, _query_rehu_api_sync, clean_digits)
-        elapsed = time.time() - start_time
-        res_text = _format_rehu_response(clean_digits, data, elapsed)
-        await event.edit(res_text)
-        return
 
     if not raw_text.startswith("."):
         if ghost_mode.enabled:
