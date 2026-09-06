@@ -253,6 +253,7 @@ ERROR_LOG_FILE = "errors.log"
 NOTES_FILE = "notes_data.json"
 PORTFOLIO_FILE = "portfolio_data.json"
 GHOST_STATE_FILE = "ghost_state.json"
+GAME_ACTION_STATE_FILE = "game_action_state.json"
 FLAIR_STATE_FILE = "flair_state.json"
 WHALE_STATE_FILE = "whale_state.json"
 SECRET_NOTES_FILE = "secret_notes.enc"
@@ -452,6 +453,101 @@ class GhostModeState:
         self._save()
 
 ghost_mode = GhostModeState()
+
+# ------------------------------------------------------------------
+# Playing Game Action Manager (Anti-Ban & Rate-Limited)
+# ------------------------------------------------------------------
+class GameActionState:
+    def __init__(self):
+        self.enabled = True
+        self.max_triggers = 3
+        self.cooldown_sec = 3600  # 1 hour
+        self.action_duration = 7  # seconds for 'game' action
+        # user_data: { user_id: {"count": int, "window_start": float, "last_action": float} }
+        self.user_data: Dict[int, Dict[str, Any]] = {}
+        self._load()
+
+    def _load(self):
+        d = load_json(GAME_ACTION_STATE_FILE, {"enabled": True, "max_triggers": 3, "cooldown_sec": 3600, "action_duration": 7})
+        self.enabled = bool(d.get("enabled", True))
+        self.max_triggers = int(d.get("max_triggers", 3))
+        self.cooldown_sec = int(d.get("cooldown_sec", 3600))
+        self.action_duration = int(d.get("action_duration", 7))
+
+    def _save(self):
+        save_json(GAME_ACTION_STATE_FILE, {
+            "enabled": self.enabled,
+            "max_triggers": self.max_triggers,
+            "cooldown_sec": self.cooldown_sec,
+            "action_duration": self.action_duration
+        })
+
+    def should_trigger(self, user_id: int) -> Tuple[bool, int, float]:
+        """
+        Returns (should_trigger, current_count, remaining_cooldown_seconds)
+        Policy:
+        - First 3 messages from a user trigger 'playing a game'.
+        - After 3 triggers, a 1-hour cooldown is enforced for that specific user.
+        - After the 1-hour cooldown elapses, the cycle resets: next 3 messages trigger again.
+        """
+        if not self.enabled:
+            return False, 0, 0.0
+
+        now = time.time()
+        record = self.user_data.get(user_id)
+
+        if not record:
+            self.user_data[user_id] = {
+                "count": 1,
+                "window_start": now,
+                "last_action": now
+            }
+            return True, 1, 0.0
+
+        elapsed = now - record.get("window_start", now)
+
+        # If 1-hour cooldown has elapsed, reset cycle for this user
+        if elapsed >= self.cooldown_sec:
+            self.user_data[user_id] = {
+                "count": 1,
+                "window_start": now,
+                "last_action": now
+            }
+            return True, 1, 0.0
+
+        # Within the 1-hour window:
+        if record["count"] < self.max_triggers:
+            record["count"] += 1
+            record["last_action"] = now
+            return True, record["count"], 0.0
+
+        # 3 triggers exhausted; user is in active 1-hour cooldown
+        remaining = max(0.0, self.cooldown_sec - elapsed)
+        return False, record["count"], remaining
+
+    def reset_user(self, user_id: int):
+        self.user_data.pop(user_id, None)
+
+    def reset_all(self):
+        self.user_data.clear()
+
+    def get_stats(self) -> dict:
+        now = time.time()
+        active_in_cooldown = 0
+        for uid, rec in list(self.user_data.items()):
+            elapsed = now - rec.get("window_start", now)
+            if elapsed < self.cooldown_sec and rec.get("count", 0) >= self.max_triggers:
+                active_in_cooldown += 1
+        return {
+            "enabled": self.enabled,
+            "max_triggers": self.max_triggers,
+            "cooldown_sec": self.cooldown_sec,
+            "action_duration": self.action_duration,
+            "tracked_users": len(self.user_data),
+            "in_cooldown_users": active_in_cooldown
+        }
+
+game_action = GameActionState()
 
 # ------------------------------------------------------------------
 # Formatting & Entity Helpers
@@ -3438,7 +3534,7 @@ HELP_CATEGORIES = {
         ".epoch", ".age", ".daysuntil", ".randnum", ".pick", ".color", ".lorem"
     ],
     "👤 User & Stealth": [
-        ".afk", ".back", ".unafk", ".status", ".me", ".myusername", ".ghost",
+        ".afk", ".back", ".unafk", ".fakegame", ".gameaction", ".status", ".me", ".myusername", ".ghost",
         ".analytics", ".mood", ".flair", ".speed", ".clearcache", ".setname",
         ".setbio", ".setpfp", ".delpfp", ".block", ".unblock"
     ],
@@ -3751,15 +3847,58 @@ async def _cmd_dispatch(event):
         else:
             await event.edit("ℹ️ AFK was not active.")
 
+    # Playing Game Action
+    elif cmd in (".fakegame", ".gameaction", ".playgame"):
+        sub = args[0].lower() if args else "status"
+        if sub in ("on", "enable", "start"):
+            game_action.enabled = True
+            game_action._save()
+            await event.edit("🎮 **Fake Game Action Enabled!**\n✓ Shows `playing a game` on the first **3 messages** per private contact.\n✓ Enforces a **1-hour cooldown** after 3 messages, then repeats.")
+        elif sub in ("off", "disable", "stop"):
+            game_action.enabled = False
+            game_action._save()
+            await event.edit("🛑 **Fake Game Action Disabled.** No game action will be simulated.")
+        elif sub in ("reset", "clear"):
+            game_action.reset_all()
+            await event.edit("🔄 **All user cooldowns reset.** Contacts will now trigger `playing a game` on their next 3 incoming messages.")
+        elif sub == "time" and len(args) > 1:
+            try:
+                new_sec = max(2, min(30, int(args[1])))
+                game_action.action_duration = new_sec
+                game_action._save()
+                await event.edit(f"⏱️ **Game Action Duration updated to:** `{new_sec}s`")
+            except ValueError:
+                await event.edit("❌ Invalid duration. Example: `.fakegame time 8`")
+        else:
+            stats = game_action.get_stats()
+            st_str = "🟢 Active" if stats["enabled"] else "🔴 Disabled"
+            await event.edit(f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎮 **GAME ACTION STATUS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ **Status:** {st_str}
+✓ **Trigger Policy:** First `{stats['max_triggers']}` messages per contact
+✓ **Cooldown:** `{stats['cooldown_sec'] // 60}` minutes (1 Hour)
+✓ **Action Duration:** `{game_action.action_duration}s`
+✓ **Tracked Contacts:** `{stats['tracked_users']}`
+✓ **Currently in Cooldown:** `{stats['in_cooldown_users']}`
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Commands:**
+• `.fakegame on` / `.fakegame off`
+• `.fakegame reset` (Reset cooldown for all)
+• `.fakegame time <sec>` (Change display time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━""")
+
     elif cmd == ".status":
         afk_st = "🌙 Active" if afk.active else "🟢 Offline (Inactive)"
         ghost_st = "👻 Enabled" if ghost_mode.enabled else "Disabled"
         fix_st = "✅ Enabled" if auto_fix_active else "Disabled"
+        game_st = f"🎮 Active (3 msgs / 1h cd)" if game_action.enabled else "Disabled"
         await event.edit(f"""━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚙️ **BOT STATUS OVERVIEW**
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ **AFK Status:** {afk_st}
 ✓ **Ghost Mode:** {ghost_st}
+✓ **Game Action:** {game_st}
 ✓ **Auto-Fix:** {fix_st}
 ✓ **Auto-Accept:** `{'Enabled' if auto_accept_active else 'Disabled'}`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━""")
@@ -6273,11 +6412,24 @@ async def cmd_handler(event):
                 log_error(event.raw_text + " [retry]", e2)
                 await event.respond(f"⚠️ **Auto-Fix Failure:** `{e2}`")
 
+_cached_me_id = None
+
+async def get_my_id():
+    global _cached_me_id
+    if _cached_me_id is None:
+        try:
+            me = await client.get_me()
+            if me:
+                _cached_me_id = me.id
+        except Exception:
+            pass
+    return _cached_me_id
+
 @client.on(events.NewMessage(incoming=True))
 async def incoming_handler(event):
     global muted_users, banned_users
-    me = await client.get_me()
-    if event.sender_id == me.id:
+    my_id = await get_my_id()
+    if event.sender_id == my_id:
         return
 
     if event.sender_id in banned_users or event.sender_id in muted_users:
@@ -6286,6 +6438,21 @@ async def incoming_handler(event):
         except Exception:
             pass
         return
+
+    # --------------------------------------------------------------
+    # Playing Game Action (Per-user rate limit: first 3 messages -> 1 hour cooldown)
+    # --------------------------------------------------------------
+    if event.is_private and game_action.enabled:
+        sender_id = event.sender_id
+        should_run, count, remaining = game_action.should_trigger(sender_id)
+        if should_run:
+            async def _safe_game_action(target_chat_id):
+                try:
+                    async with client.action(target_chat_id, 'game'):
+                        await asyncio.sleep(game_action.action_duration)
+                except Exception as ex:
+                    log_error("game_action", ex)
+            asyncio.create_task(_safe_game_action(event.chat_id))
 
     if afk.active and event.is_private:
         sender_id = event.sender_id
@@ -6332,6 +6499,8 @@ async def run_client():
         return
 
     me = await client.get_me()
+    global _cached_me_id
+    _cached_me_id = me.id
     log.info(f"Logged in as: {me.first_name} (@{me.username}) | ID: {me.id}")
     log.info(f"Rehu SelfBot V{BOT_VERSION} by {DEV_NAME} is active!")
     await web_server()
