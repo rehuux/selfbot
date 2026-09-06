@@ -6376,42 +6376,6 @@ async def _cmd_dispatch(event):
 # ------------------------------------------------------------------
 # Event Listeners
 # ------------------------------------------------------------------
-@client.on(events.NewMessage(outgoing=True))
-async def cmd_handler(event):
-    raw_text = event.raw_text.strip()
-    # Note: AFK is NOT auto-disabled when owner messages, persistent until .back
-
-    if not raw_text.startswith("."):
-        if ghost_mode.enabled:
-            async def _ghost_clean():
-                await asyncio.sleep(ghost_mode.delete_delay)
-                try:
-                    await event.delete()
-                except Exception:
-                    pass
-            asyncio.create_task(_ghost_clean())
-        return
-
-    try:
-        await _cmd_dispatch(event)
-        if ghost_mode.enabled:
-            async def _ghost_clean():
-                await asyncio.sleep(ghost_mode.delete_delay)
-                try:
-                    await event.delete()
-                except Exception:
-                    pass
-            asyncio.create_task(_ghost_clean())
-    except Exception as e:
-        log_error(event.raw_text, e)
-        if auto_fix_active:
-            await asyncio.sleep(1.2)
-            try:
-                await _cmd_dispatch(event)
-            except Exception as e2:
-                log_error(event.raw_text + " [retry]", e2)
-                await event.respond(f"⚠️ **Auto-Fix Failure:** `{e2}`")
-
 _cached_me_id = None
 
 async def get_my_id():
@@ -6425,11 +6389,53 @@ async def get_my_id():
             pass
     return _cached_me_id
 
+@client.on(events.NewMessage(outgoing=True))
+async def cmd_handler(event):
+    raw_text = (event.raw_text or "").strip()
+    if not raw_text:
+        return
+
+    # If it is a command (.something)
+    if raw_text.startswith("."):
+        cmd_name = raw_text.split()[0].lower()
+        log.info(f"Command triggered: {cmd_name} in chat {event.chat_id}")
+        try:
+            await _cmd_dispatch(event)
+            if ghost_mode.enabled:
+                async def _ghost_clean():
+                    await asyncio.sleep(ghost_mode.delete_delay)
+                    try:
+                        await event.delete()
+                    except Exception:
+                        pass
+                asyncio.create_task(_ghost_clean())
+        except Exception as e:
+            log_error(event.raw_text, e)
+            log.error(f"Error executing {cmd_name}: {e}")
+            if auto_fix_active:
+                await asyncio.sleep(1.2)
+                try:
+                    await _cmd_dispatch(event)
+                except Exception as e2:
+                    log_error(event.raw_text + " [retry]", e2)
+                    await event.respond(f"⚠️ **Auto-Fix Failure:** `{e2}`")
+        return
+
+    # Normal non-command outgoing message
+    if ghost_mode.enabled:
+        async def _ghost_clean():
+            await asyncio.sleep(ghost_mode.delete_delay)
+            try:
+                await event.delete()
+            except Exception:
+                pass
+        asyncio.create_task(_ghost_clean())
+
 @client.on(events.NewMessage(incoming=True))
 async def incoming_handler(event):
     global muted_users, banned_users
     my_id = await get_my_id()
-    if event.sender_id == my_id:
+    if my_id is not None and event.sender_id == my_id:
         return
 
     if event.sender_id in banned_users or event.sender_id in muted_users:
@@ -6479,7 +6485,7 @@ async def web_server():
     app.router.add_get("/health", lambda r: aw.Response(text="OK"))
     runner = aw.AppRunner(app)
     await runner.setup()
-    port = int(os.environ.get("PORT", 3000))
+    port = int(os.environ.get("PORT", 10000))
     site = aw.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     log.info(f"Health check endpoint active on port {port}")
@@ -6488,6 +6494,7 @@ async def web_server():
 # Main Execution Loop
 # ------------------------------------------------------------------
 async def run_client():
+    global _cached_me_id
     try:
         if PHONE:
             await client.start(phone=PHONE)
@@ -6499,7 +6506,6 @@ async def run_client():
         return
 
     me = await client.get_me()
-    global _cached_me_id
     _cached_me_id = me.id
     log.info(f"Logged in as: {me.first_name} (@{me.username}) | ID: {me.id}")
     log.info(f"Rehu SelfBot V{BOT_VERSION} by {DEV_NAME} is active!")
