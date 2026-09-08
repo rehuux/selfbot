@@ -1398,15 +1398,67 @@ def _download_ig_posts(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
 def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], str]:
     """
     Downloads reels/videos from an Instagram username or reel URL.
+    Uses high-speed Instaloader engine with multiple fallback mechanisms and developer credits.
     Returns (list_of_(filepath, is_video, caption), status_text).
     """
     kind, val = _clean_ig_target(target_input)
     if not val:
         return ([], "❌ Please provide a valid Instagram username or reel URL.")
 
-    # Single Reel URL handler
+    # Single Reel / Post URL handler
     if kind in ("reel", "post"):
         shortcode = val
+
+        # Strategy 1: Instaloader Engine (Clean HD Stream & Metadata extraction)
+        if INSTA_OK:
+            try:
+                L = instaloader.Instaloader(
+                    quiet=True,
+                    download_comments=False,
+                    save_metadata=False,
+                    post_metadata_txt_pattern=""
+                )
+                post = instaloader.Post.from_shortcode(L.context, shortcode)
+                if post.is_video and post.video_url:
+                    out_file = os.path.join(TEMP_DIR, f"reel_{shortcode}_{uuid4().hex[:6]}.mp4")
+                    headers = {
+                        "User-Agent": (
+                            "Mozilla/5.0 (Linux; Android 11) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/140.0.0.0 Mobile Safari/537.36"
+                        ),
+                        "Referer": "https://www.instagram.com/",
+                        "Accept": "*/*",
+                    }
+                    with requests.get(post.video_url, headers=headers, stream=True, timeout=(15, 90), allow_redirects=True) as resp:
+                        resp.raise_for_status()
+                        with open(out_file, "wb") as f:
+                            for chunk in resp.iter_content(chunk_size=256 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                    if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                        owner = post.owner_username or "instagram_user"
+                        caption_snippet = (post.caption or "").strip()
+                        if len(caption_snippet) > 180:
+                            caption_snippet = caption_snippet[:177] + "..."
+                        caption = (
+                            f"🎞 **Instagram Reel Downloaded**\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👤 **Creator:** `@{owner}`\n"
+                            f"🔗 **URL:** https://instagram.com/reel/{shortcode}/\n"
+                        )
+                        if caption_snippet:
+                            caption += f"📝 **Caption:** {caption_snippet}\n"
+                        caption += (
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        )
+                        return ([(out_file, True, caption)], f"✅ Downloaded reel {shortcode}")
+            except Exception as ex:
+                log.info(f"Instaloader reel error for {shortcode}: {ex}")
+
+        # Strategy 2: Direct Embed captioned parse fallback
         embed_url = f"https://www.instagram.com/reel/{shortcode}/embed/captioned/"
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
@@ -1418,16 +1470,17 @@ def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
             })
             with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
                 html = r.read().decode("utf-8", errors="ignore")
-                # Search for video URLs
                 video_matches = re.findall(r'"video_url":"([^"]+)"', html)
                 if video_matches:
                     vid_url = video_matches[0].replace(r"\u0026", "&").replace("&amp;", "&")
                     fp = _download_media_url_to_file(vid_url, is_video=True)
                     if fp:
                         caption = (
-                            f"🎞 **Instagram Reel:** `{shortcode}`\n"
+                            f"🎞 **Instagram Reel Downloaded**\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            f"🔗 https://instagram.com/reel/{shortcode}/\n"
+                            f"🔗 **URL:** https://instagram.com/reel/{shortcode}/\n"
+                            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
                         )
                         return ([(fp, True, caption)], f"✅ Downloaded reel {shortcode}")
@@ -3516,7 +3569,7 @@ INSULTS_TECH = [
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
         ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
-        ".insta", ".ig", ".iginfo", ".igpfp", ".igd", ".igp", ".igr", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
+        ".insta", ".ig", ".iginfo", ".igpfp", ".igd", ".igp", ".igr", ".dreels", "/dreels", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
         ".members", ".zombies", ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned",
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
@@ -3656,7 +3709,7 @@ async def _cmd_dispatch(event):
     global muted_users, banned_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
 
     raw = event.raw_text.strip()
-    if not raw.startswith("."):
+    if not (raw.startswith(".") or raw.startswith("/")):
         return
 
     text = raw.lower()
@@ -4136,14 +4189,18 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(status_msg)
 
-    elif cmd in (".igr", ".igreel", ".igreels", ".instareel", ".instareels"):
-        if not args_str:
-            await event.edit("❌ **Usage:** `.igr <username/reel_url>`\n_Example:_ `.igr cristiano` or `.igr https://instagram.com/reel/...`")
+    elif cmd in (".dreels", "/dreels", ".igr", ".igreel", ".igreels", ".instareel", ".instareels"):
+        target = args_str.strip()
+        if not target and event.is_reply:
+            reply = await event.get_reply_message()
+            if reply and reply.raw_text:
+                target = reply.raw_text.strip()
+        if not target:
+            await event.edit("❌ **Usage:** `.dreels <reel_url/username>` or `/dreels <url>`\n_Example:_ `.dreels https://www.instagram.com/reel/C12345/` or reply to a message containing a link.")
             return
-        clean_target = args_str.strip()
-        await event.edit(f"🎞 **Fetching Instagram Reels for {clean_target}...**")
+        await event.edit(f"⏳ **Downloading Instagram Reel for {target}...**")
         loop = asyncio.get_event_loop()
-        items, status_msg = await loop.run_in_executor(None, _download_ig_reels, clean_target)
+        items, status_msg = await loop.run_in_executor(None, _download_ig_reels, target)
         if items:
             for file_path, is_vid, caption in items:
                 try:
@@ -4152,6 +4209,7 @@ async def _cmd_dispatch(event):
                         file_path,
                         caption=caption,
                         video=is_vid,
+                        supports_streaming=True,
                         reply_to=event.reply_to_msg_id
                     )
                 except Exception as e:
@@ -6395,8 +6453,8 @@ async def cmd_handler(event):
     if not raw_text:
         return
 
-    # If it is a command (.something)
-    if raw_text.startswith("."):
+    # If it is a command (.something or /something)
+    if raw_text.startswith(".") or raw_text.startswith("/"):
         cmd_name = raw_text.split()[0].lower()
         log.info(f"Command triggered: {cmd_name} in chat {event.chat_id}")
         try:
