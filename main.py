@@ -340,17 +340,29 @@ def save_json(filepath: str, data: Any):
     except Exception as e:
         log.error(f"Failed to save {filepath}: {e}")
 
-data = load_json(DATA_FILE, {"muted_users": [], "banned_users": [], "userreel_users": []})
+data = load_json(DATA_FILE, {"muted_users": [], "banned_users": [], "userreel_users": [], "sudo_users": []})
 muted_users = set(data.get("muted_users", []))
 banned_users = set(data.get("banned_users", []))
 userreel_users = set(data.get("userreel_users", []))
+sudo_users = set(data.get("sudo_users", []))
+
+# Also read SUDO_USERS env var if specified
+_env_sudo = os.environ.get("SUDO_USERS", "").strip()
+if _env_sudo:
+    for _s in _env_sudo.split(","):
+        _s = _s.strip()
+        if _s.lstrip("-").isdigit():
+            sudo_users.add(int(_s))
+        elif _s:
+            sudo_users.add(_s)
 
 def save_selfbot_data():
     try:
         save_json(DATA_FILE, {
             "muted_users": list(muted_users),
             "banned_users": list(banned_users),
-            "userreel_users": list(userreel_users)
+            "userreel_users": list(userreel_users),
+            "sudo_users": list(sudo_users)
         })
     except Exception as e:
         log.error(f"Failed to save selfbot data: {e}")
@@ -630,7 +642,7 @@ async def _send_gif_with_text(event, gif_url, text):
         pass
     caption = text if len(text) <= 1024 else text[:1020] + "..."
     try:
-        await client.send_file(event.chat_id, gif_url, caption=caption)
+        await asyncio.wait_for(client.send_file(event.chat_id, gif_url, caption=caption), timeout=7.0)
     except Exception as e:
         log_error("send_gif", e)
         try:
@@ -3717,7 +3729,7 @@ def _build_dev_info():
 # Command Dispatcher
 # ------------------------------------------------------------------
 async def _cmd_dispatch(event):
-    global muted_users, banned_users, userreel_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
+    global muted_users, banned_users, userreel_users, sudo_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
 
     raw = event.raw_text.strip()
     if not (raw.startswith(".") or raw.startswith("/")):
@@ -3728,6 +3740,8 @@ async def _cmd_dispatch(event):
     if not tokens:
         return
     cmd = tokens[0].lower()
+    if cmd.startswith("/"):
+        cmd = "." + cmd[1:]
     args = tokens[1:]
     args_str = raw[len(tokens[0]):].strip()
 
@@ -4387,6 +4401,92 @@ async def _cmd_dispatch(event):
                 f"⚡ Ab is user se aane waali saari Instagram Reel links automatically download hokar chat me bhej di jaayengi!\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+
+    elif cmd in (".sudo", ".sudos"):
+        sub = (args[0].lower() if args else "").strip()
+        if sub in ("list", "all", "show"):
+            if not sudo_users:
+                await event.edit("👑 **Sudo Users:** No sudo users configured.\nUse `.sudo <user_id>` to add one.")
+            else:
+                lines = [
+                    "👑 **Authorized Sudo Users**",
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    f"📊 **Total Sudo Users:** `{len(sudo_users)}`",
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                ]
+                for uid in sorted(list(sudo_users), key=lambda x: str(x)):
+                    try:
+                        u = await client.get_entity(uid)
+                        uname = f" (@{u.username})" if getattr(u, 'username', None) else ""
+                        lines.append(f"• `{uid}` — **{getattr(u, 'first_name', uid)}**{uname}")
+                    except Exception:
+                        lines.append(f"• `{uid}`")
+                lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                lines.append("💡 *Tip:* Sudo users can run bot commands from their own accounts.")
+                await event.edit("\n".join(lines))
+            return
+
+        elif sub in ("clear", "reset"):
+            count = len(sudo_users)
+            sudo_users.clear()
+            save_selfbot_data()
+            await event.edit(f"🗑️ **Cleared all `{count}` sudo user(s).**")
+            return
+
+        target_id = None
+        target_name = None
+        if event.is_reply and not args_str:
+            rep = await event.get_reply_message()
+            if rep and rep.sender_id:
+                target_id = rep.sender_id
+                try:
+                    u = await client.get_entity(target_id)
+                    target_name = getattr(u, 'first_name', str(target_id))
+                except Exception:
+                    target_name = str(target_id)
+        elif args_str:
+            raw_s = args_str.strip()
+            if raw_s.lower().startswith("add "):
+                raw_s = raw_s[4:].strip()
+            try:
+                u = await get_entity(raw_s)
+                if u:
+                    target_id = u.id
+                    target_name = getattr(u, 'first_name', str(u.id))
+            except Exception:
+                pass
+            if not target_id and raw_s.lstrip("-").isdigit():
+                target_id = int(raw_s)
+                target_name = f"User {target_id}"
+
+        if not target_id:
+            await event.edit(
+                "👑 **SelfBot Sudo Manager**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "• `.sudo <user_id or @username>` — Add / Toggle Sudo\n"
+                "• Reply to someone with `.sudo`\n"
+                "• `.sudo list` — View Sudo Users\n"
+                "• `.sudo clear` — Wipe Sudo Users\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            return
+
+        matched = [x for x in sudo_users if str(x) == str(target_id)]
+        if matched:
+            for x in matched:
+                sudo_users.discard(x)
+            save_selfbot_data()
+            await event.edit(f"❌ **Revoked Sudo Privileges:** `{target_name or target_id}` (`{target_id}`)")
+        else:
+            sudo_users.add(target_id)
+            save_selfbot_data()
+            await event.edit(
+                f"✅ **Granted Sudo Privileges**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **User:** `{target_name or target_id}` (`{target_id}`)\n"
+                f"🎯 **Access:** This account can now run `.commands` on your selfbot!\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
             )
 
@@ -6610,19 +6710,39 @@ async def get_my_id():
             pass
     return _cached_me_id
 
-@client.on(events.NewMessage(outgoing=True))
-async def cmd_handler(event):
+@client.on(events.NewMessage())
+async def on_new_message(event):
+    global muted_users, banned_users, userreel_users, sudo_users
     raw_text = (event.raw_text or "").strip()
-    if not raw_text:
-        return
 
-    # If it is a command (.something or /something)
-    if raw_text.startswith(".") or raw_text.startswith("/"):
+    my_id = await get_my_id()
+    is_out = bool(getattr(event, "out", False))
+    # In Telethon, messages in Saved Messages or sent from phone/desktop apps can have event.out == False but sender_id == my_id
+    is_owner = is_out or (my_id is not None and event.sender_id == my_id)
+    is_sudo = (event.sender_id in sudo_users) or (str(event.sender_id) in sudo_users)
+
+    # --------------------------------------------------------------
+    # 1. Commands Handling (Owner or Sudo)
+    # --------------------------------------------------------------
+    if (is_owner or is_sudo) and raw_text and (raw_text.startswith(".") or raw_text.startswith("/")):
         cmd_name = raw_text.split()[0].lower()
-        log.info(f"Command triggered: {cmd_name} in chat {event.chat_id}")
+        log.info(f"Command triggered: {cmd_name} in chat {event.chat_id} by {event.sender_id} (is_owner={is_owner}, is_sudo={is_sudo})")
+
+        # Safe edit wrapper: if not sent by client or edit fails, fallback to respond
+        _orig_edit = event.edit
+        async def _safe_edit(*args, **kwargs):
+            try:
+                if is_owner:
+                    return await _orig_edit(*args, **kwargs)
+                else:
+                    return await event.respond(*args, **kwargs)
+            except Exception:
+                return await event.respond(*args, **kwargs)
+        event.edit = _safe_edit
+
         try:
             await _cmd_dispatch(event)
-            if ghost_mode.enabled:
+            if is_owner and ghost_mode.enabled:
                 async def _ghost_clean():
                     await asyncio.sleep(ghost_mode.delete_delay)
                     try:
@@ -6642,34 +6762,32 @@ async def cmd_handler(event):
                     await event.respond(f"⚠️ **Auto-Fix Failure:** `{e2}`")
         return
 
-    # Normal non-command outgoing message
-    if ghost_mode.enabled:
-        async def _ghost_clean():
-            await asyncio.sleep(ghost_mode.delete_delay)
-            try:
-                await event.delete()
-            except Exception:
-                pass
-        asyncio.create_task(_ghost_clean())
-
-@client.on(events.NewMessage(incoming=True))
-async def incoming_handler(event):
-    global muted_users, banned_users, userreel_users
-    my_id = await get_my_id()
-    if my_id is not None and event.sender_id == my_id:
+    # If message was from owner and not a command
+    if is_owner:
+        if ghost_mode.enabled:
+            async def _ghost_clean():
+                await asyncio.sleep(ghost_mode.delete_delay)
+                try:
+                    await event.delete()
+                except Exception:
+                    pass
+            asyncio.create_task(_ghost_clean())
         return
 
-    if event.sender_id in banned_users or event.sender_id in muted_users:
+    # --------------------------------------------------------------
+    # 2. Incoming Messages from Other Users
+    # --------------------------------------------------------------
+    sender_id = event.sender_id
+
+    # Muted/Banned users check
+    if sender_id in banned_users or sender_id in muted_users:
         try:
             await event.delete()
         except Exception:
             pass
         return
 
-    # --------------------------------------------------------------
     # Auto Instagram Reel Downloader for Monitored Users (.userreel)
-    # --------------------------------------------------------------
-    sender_id = event.sender_id
     is_monitored = False
     if sender_id is not None:
         if sender_id in userreel_users or str(sender_id) in userreel_users:
@@ -6718,9 +6836,7 @@ async def incoming_handler(event):
             for link in unique_links[:3]:
                 asyncio.create_task(_auto_download_reel_task(event.chat_id, event.id, link))
 
-    # --------------------------------------------------------------
-    # Playing Game Action (Per-user rate limit: first 3 messages -> 1 hour cooldown)
-    # --------------------------------------------------------------
+    # Playing Game Action
     if event.is_private and game_action.enabled:
         sender_id = event.sender_id
         should_run, count, remaining = game_action.should_trigger(sender_id)
@@ -6733,6 +6849,7 @@ async def incoming_handler(event):
                     log_error("game_action", ex)
             asyncio.create_task(_safe_game_action(event.chat_id))
 
+    # AFK Auto Reply
     if afk.active and event.is_private:
         sender_id = event.sender_id
         if afk.should_reply(sender_id):
