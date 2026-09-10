@@ -340,9 +340,20 @@ def save_json(filepath: str, data: Any):
     except Exception as e:
         log.error(f"Failed to save {filepath}: {e}")
 
-data = load_json(DATA_FILE, {"muted_users": [], "banned_users": []})
+data = load_json(DATA_FILE, {"muted_users": [], "banned_users": [], "userreel_users": []})
 muted_users = set(data.get("muted_users", []))
 banned_users = set(data.get("banned_users", []))
+userreel_users = set(data.get("userreel_users", []))
+
+def save_selfbot_data():
+    try:
+        save_json(DATA_FILE, {
+            "muted_users": list(muted_users),
+            "banned_users": list(banned_users),
+            "userreel_users": list(userreel_users)
+        })
+    except Exception as e:
+        log.error(f"Failed to save selfbot data: {e}")
 portfolio = load_json(PORTFOLIO_FILE, {})
 notes_db = load_json(NOTES_FILE, {})
 
@@ -3569,7 +3580,7 @@ INSULTS_TECH = [
 HELP_CATEGORIES = {
     "🤖 Info & Telegram": [
         ".info", ".tinfo", ".userinfo", ".chatinfo", ".id", ".myid", ".unread", ".ocr",
-        ".insta", ".ig", ".iginfo", ".igpfp", ".igd", ".igp", ".igr", ".dreels", "/dreels", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
+        ".insta", ".ig", ".iginfo", ".igpfp", ".igd", ".igp", ".igr", ".dreels", "/dreels", ".userreel", ".github", ".repo", ".time", ".worldtime", ".admins", ".bots",
         ".members", ".zombies", ".dc", ".link", ".pin", ".unpin", ".unpinall", ".pinned",
         ".title", ".setdesc", ".slow", ".slowmode", ".lock", ".unlock", ".dialogs", ".firstmsg"
     ],
@@ -3706,7 +3717,7 @@ def _build_dev_info():
 # Command Dispatcher
 # ------------------------------------------------------------------
 async def _cmd_dispatch(event):
-    global muted_users, banned_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
+    global muted_users, banned_users, userreel_users, auto_accept_active, auto_fix_active, whale_alert_active, _whale_task
 
     raw = event.raw_text.strip()
     if not (raw.startswith(".") or raw.startswith("/")):
@@ -4227,6 +4238,158 @@ async def _cmd_dispatch(event):
         else:
             await event.edit(status_msg)
 
+    elif cmd in (".userreel", "/userreel", ".userreels", "/userreels", ".autoreel", ".autoreels"):
+        sub = (args[0].lower() if args else "").strip()
+
+        if sub in ("list", "all", "status", "show"):
+            if not userreel_users:
+                await event.edit(
+                    "🎬 **Instagram Auto-Reel Monitor**\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "ℹ️ **No users currently configured.**\n\n"
+                    "💡 **Usage:**\n"
+                    "• `.userreel <user_id or @username>` (Add/Toggle)\n"
+                    "• Reply to a user with `.userreel`\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                )
+                return
+
+            lines = [
+                "🎬 **Instagram Auto-Reel Monitored Users**",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"📊 **Active Monitored Users:** `{len(userreel_users)}`",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            ]
+            for uid in sorted(list(userreel_users), key=lambda x: str(x)):
+                try:
+                    u = await client.get_entity(uid)
+                    name = getattr(u, 'first_name', '') or ''
+                    uname = f" (@{u.username})" if getattr(u, 'username', None) else ""
+                    lines.append(f"• `{uid}` — **{name}**{uname}")
+                except Exception:
+                    lines.append(f"• `{uid}`")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("💡 *Tip:* Use `.userreel del <id>` to remove or `.userreel clear` to wipe.")
+            lines.append(f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO})")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            await event.edit("\n".join(lines))
+            return
+
+        elif sub in ("clear", "reset", "delall", "removeall"):
+            count = len(userreel_users)
+            userreel_users.clear()
+            save_selfbot_data()
+            await event.edit(f"🗑️ **Cleared all `{count}` user(s) from Auto-Reel Monitor.**")
+            return
+
+        target_id = None
+        target_name = None
+
+        if sub in ("del", "delete", "rem", "remove"):
+            rem_target = " ".join(args[1:]).strip()
+            if not rem_target and event.is_reply:
+                reply = await event.get_reply_message()
+                if reply and reply.sender_id:
+                    target_id = reply.sender_id
+            elif rem_target:
+                try:
+                    u = await get_entity(rem_target)
+                    if u:
+                        target_id = u.id
+                        target_name = getattr(u, 'first_name', str(u.id))
+                except Exception:
+                    pass
+                if not target_id and rem_target.lstrip("-").isdigit():
+                    target_id = int(rem_target)
+            if not target_id:
+                await event.edit("❌ **Usage:** `.userreel del <user_id or @username>` or reply to target user.")
+                return
+
+            matched = [x for x in userreel_users if str(x) == str(target_id)]
+            if matched:
+                for x in matched:
+                    userreel_users.discard(x)
+                save_selfbot_data()
+                await event.edit(f"✅ **Removed user `{target_name or target_id}` (`{target_id}`) from Auto-Reel Monitor.**")
+            else:
+                await event.edit(f"⚠️ User `{target_id}` was not in the Auto-Reel Monitor list.")
+            return
+
+        # Overview if no args and not reply
+        if not args_str and not event.is_reply:
+            count = len(userreel_users)
+            await event.edit(
+                f"🎬 **Instagram Auto-Reel Monitor**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📌 **Active Monitored Users:** `{count}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💡 **Usage Guide:**\n"
+                f"• `.userreel <user_id>` — Add or Toggle User\n"
+                f"• Reply to any message with `.userreel`\n"
+                f"• `.userreel list` — View Monitored Users\n"
+                f"• `.userreel del <user_id>` — Remove User\n"
+                f"• `.userreel clear` — Clear All Users\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            return
+
+        if event.is_reply and not args_str:
+            reply = await event.get_reply_message()
+            if reply and reply.sender_id:
+                target_id = reply.sender_id
+                try:
+                    u = await client.get_entity(target_id)
+                    target_name = getattr(u, 'first_name', str(target_id))
+                except Exception:
+                    target_name = str(target_id)
+        else:
+            raw_input = args_str.strip()
+            if raw_input.lower().startswith("add "):
+                raw_input = raw_input[4:].strip()
+            try:
+                u = await get_entity(raw_input)
+                if u:
+                    target_id = u.id
+                    target_name = getattr(u, 'first_name', str(u.id))
+            except Exception:
+                pass
+            if not target_id and raw_input.lstrip("-").isdigit():
+                target_id = int(raw_input)
+                target_name = f"User ID {target_id}"
+
+        if not target_id:
+            await event.edit(f"❌ **Could not find user:** `{args_str}`\nPlease provide a valid Telegram User ID or `@username`.")
+            return
+
+        matched = [x for x in userreel_users if str(x) == str(target_id)]
+        if matched:
+            for x in matched:
+                userreel_users.discard(x)
+            save_selfbot_data()
+            await event.edit(
+                f"❌ **Auto-Reel Monitor Removed**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **User:** `{target_name}` (`{target_id}`)\n"
+                f"📊 **Status:** Monitoring has been **Disabled** for this user.\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+        else:
+            userreel_users.add(target_id)
+            save_selfbot_data()
+            await event.edit(
+                f"✅ **Auto-Reel Monitor Configured**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **Target User:** `{target_name}` (`{target_id}`)\n"
+                f"🎯 **Status:** **Active Monitoring Enabled**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⚡ Ab is user se aane waali saari Instagram Reel links automatically download hokar chat me bhej di jaayengi!\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+
     # Moderation
     elif cmd in (".mute", ".ban"):
         u = None
@@ -4238,7 +4401,7 @@ async def _cmd_dispatch(event):
         if u:
             muted_users.add(u.id)
             banned_users.add(u.id)
-            save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
+            save_selfbot_data()
             await event.edit(f"🚫 Blocked `{u.first_name or u.id}` in SelfBot memory.")
         else:
             await event.edit("❌ User not found.")
@@ -4253,7 +4416,7 @@ async def _cmd_dispatch(event):
         if u:
             muted_users.discard(u.id)
             banned_users.discard(u.id)
-            save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
+            save_selfbot_data()
             await event.edit(f"✅ Unblocked `{u.first_name or u.id}`")
         else:
             await event.edit("❌ User not found.")
@@ -6422,13 +6585,13 @@ async def _cmd_dispatch(event):
     elif cmd == ".unmuteall":
         count = len(muted_users)
         muted_users.clear()
-        save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
+        save_selfbot_data()
         await event.edit(f"✅ **Unmuted all `{count}` users** from selfbot memory.")
 
     elif cmd == ".unbanall":
         count = len(banned_users)
         banned_users.clear()
-        save_json(DATA_FILE, {"muted_users": list(muted_users), "banned_users": list(banned_users)})
+        save_selfbot_data()
         await event.edit(f"✅ **Unbanned all `{count}` users** from selfbot memory.")
 
 # ------------------------------------------------------------------
@@ -6491,7 +6654,7 @@ async def cmd_handler(event):
 
 @client.on(events.NewMessage(incoming=True))
 async def incoming_handler(event):
-    global muted_users, banned_users
+    global muted_users, banned_users, userreel_users
     my_id = await get_my_id()
     if my_id is not None and event.sender_id == my_id:
         return
@@ -6502,6 +6665,58 @@ async def incoming_handler(event):
         except Exception:
             pass
         return
+
+    # --------------------------------------------------------------
+    # Auto Instagram Reel Downloader for Monitored Users (.userreel)
+    # --------------------------------------------------------------
+    sender_id = event.sender_id
+    is_monitored = False
+    if sender_id is not None:
+        if sender_id in userreel_users or str(sender_id) in userreel_users:
+            is_monitored = True
+        elif isinstance(sender_id, str) and sender_id.lstrip("-").isdigit() and int(sender_id) in userreel_users:
+            is_monitored = True
+
+    if is_monitored and event.raw_text:
+        raw_msg = event.raw_text
+        ig_matches = list(re.finditer(r'https?://(?:www\.)?instagram\.com/(?:reel|reels|p)/([a-zA-Z0-9_\-]+)', raw_msg))
+        if ig_matches:
+            seen_codes = set()
+            unique_links = []
+            for m in ig_matches:
+                code = m.group(1)
+                if code not in seen_codes:
+                    seen_codes.add(code)
+                    unique_links.append(m.group(0))
+
+            async def _auto_download_reel_task(target_chat_id, target_msg_id, link):
+                try:
+                    loop = asyncio.get_event_loop()
+                    items, status_msg = await loop.run_in_executor(None, _download_ig_reels, link)
+                    if items:
+                        for file_path, is_vid, caption in items:
+                            try:
+                                await client.send_file(
+                                    target_chat_id,
+                                    file_path,
+                                    caption=caption,
+                                    video=is_vid,
+                                    supports_streaming=True,
+                                    reply_to=target_msg_id
+                                )
+                            except Exception as ex_send:
+                                log_error("auto_userreel_send", ex_send)
+                            finally:
+                                if file_path and os.path.exists(file_path):
+                                    try:
+                                        os.remove(file_path)
+                                    except Exception:
+                                        pass
+                except Exception as ex_all:
+                    log_error("auto_userreel_task", ex_all)
+
+            for link in unique_links[:3]:
+                asyncio.create_task(_auto_download_reel_task(event.chat_id, event.id, link))
 
     # --------------------------------------------------------------
     # Playing Game Action (Per-user rate limit: first 3 messages -> 1 hour cooldown)
