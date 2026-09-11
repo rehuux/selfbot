@@ -16,6 +16,7 @@ import base64
 import codecs
 import traceback
 import urllib.parse
+import subprocess
 from uuid import uuid4
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -58,6 +59,12 @@ try:
     INSTA_OK = True
 except ImportError:
     INSTA_OK = False
+
+try:
+    import yt_dlp
+    YTDLP_OK = True
+except ImportError:
+    YTDLP_OK = False
 
 try:
     from langdetect import detect as _detect_lang
@@ -258,6 +265,7 @@ FLAIR_STATE_FILE = "flair_state.json"
 WHALE_STATE_FILE = "whale_state.json"
 SECRET_NOTES_FILE = "secret_notes.enc"
 SECRET_SALT_FILE = "secret_salt.bin"
+DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMP_DIR = "selfbot_temp"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -649,6 +657,150 @@ async def _send_gif_with_text(event, gif_url, text):
             await client.send_message(event.chat_id, text)
         except Exception:
             pass
+
+def _get_video_metadata(file_path: str) -> Tuple[int, int, int]:
+    """Returns (duration_seconds, width, height) using ffprobe."""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,duration',
+            '-of', 'csv=s=x:p=0',
+            file_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        parts = res.stdout.strip().split("x")
+        if len(parts) >= 2:
+            w = int(parts[0]) if parts[0].isdigit() else 720
+            h = int(parts[1]) if parts[1].isdigit() else 1280
+            dur = 10
+            if len(parts) >= 3:
+                try:
+                    dur = int(float(parts[2]))
+                except Exception:
+                    dur = 10
+            return (dur, w, h)
+    except Exception:
+        pass
+    return (10, 720, 1280)
+
+def _ensure_mp4_video_with_audio(file_path: str) -> str:
+    """
+    Ensures that the video file is an MP4 with an audio track.
+    If it lacks an audio track, adds a silent AAC stereo track using ffmpeg so Telegram
+    NEVER treats, plays, or downloads it as an animated GIF.
+    """
+    if not file_path or not os.path.exists(file_path):
+        return file_path
+    try:
+        # Check if file has an audio track
+        check_cmd = [
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'a:0',
+            '-show_entries', 'stream=codec_type',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            file_path
+        ]
+        res = subprocess.run(check_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=4)
+        has_audio = bool(res.stdout.strip())
+        if not has_audio:
+            fixed_path = file_path.rsplit(".", 1)[0] + "_aud.mp4"
+            add_audio_cmd = [
+                'ffmpeg', '-y',
+                '-i', file_path,
+                '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-shortest',
+                fixed_path
+            ]
+            subprocess.run(add_audio_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=True)
+            if os.path.exists(fixed_path) and os.path.getsize(fixed_path) > 1000:
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+                return fixed_path
+    except Exception as e:
+        log.info(f"Video audio ensure error: {e}")
+    return file_path
+
+async def _send_media_item(chat_id, file_path: str, is_vid: bool, caption: str = "", reply_to = None):
+    """
+    Sends photo or video to chat.
+    If is_vid is True, guarantees it is sent as a native streamable MP4 video with DocumentAttributeVideo
+    so Telegram NEVER converts or downloads it as an animated GIF.
+    """
+    if not file_path or not os.path.exists(file_path):
+        return
+
+    if is_vid:
+        final_path = _ensure_mp4_video_with_audio(file_path)
+        dur, w, h = _get_video_metadata(final_path)
+
+        attrs = []
+        try:
+            from telethon.tl.types import DocumentAttributeVideo
+            try:
+                attrs.append(DocumentAttributeVideo(
+                    duration=int(dur or 10),
+                    w=int(w or 720),
+                    h=int(h or 1280),
+                    supports_streaming=True,
+                    nosound=False
+                ))
+            except TypeError:
+                attrs.append(DocumentAttributeVideo(
+                    duration=int(dur or 10),
+                    w=int(w or 720),
+                    h=int(h or 1280),
+                    supports_streaming=True
+                ))
+        except Exception:
+            pass
+
+        try:
+            await client.send_file(
+                chat_id,
+                final_path,
+                caption=caption,
+                attributes=attrs,
+                supports_streaming=True,
+                nosound_video=True,
+                reply_to=reply_to
+            )
+            return
+        except TypeError:
+            try:
+                await client.send_file(
+                    chat_id,
+                    final_path,
+                    caption=caption,
+                    attributes=attrs,
+                    supports_streaming=True,
+                    reply_to=reply_to
+                )
+                return
+            except Exception as ex2:
+                log.error(f"Failed sending video with attributes: {ex2}")
+        except Exception as ex:
+            log.error(f"Failed sending video with attributes: {ex}")
+
+        # Fallback send as video
+        await client.send_file(
+            chat_id,
+            final_path,
+            caption=caption,
+            video=True,
+            reply_to=reply_to
+        )
+    else:
+        await client.send_file(
+            chat_id,
+            file_path,
+            caption=caption,
+            reply_to=reply_to
+        )
 
 # ------------------------------------------------------------------
 # Feature Implementation Functions
@@ -1432,7 +1584,48 @@ def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
     if kind in ("reel", "post"):
         shortcode = val
 
-        # Strategy 1: Instaloader Engine (Clean HD Stream & Metadata extraction)
+        # Strategy 1: yt-dlp Engine (Extracts full 1080p MP4 with synced audio)
+        if YTDLP_OK:
+            try:
+                out_tmpl = os.path.join(TEMP_DIR, f"reel_{shortcode}_{uuid4().hex[:6]}.%(ext)s")
+                ydl_opts = {
+                    'format': 'bestvideo+bestaudio/best',
+                    'outtmpl': out_tmpl,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'merge_output_format': 'mp4',
+                    'socket_timeout': 15,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f"https://www.instagram.com/reel/{shortcode}/", download=True)
+                    if info:
+                        actual_file = ydl.prepare_filename(info)
+                        if not os.path.exists(actual_file):
+                            actual_file = actual_file.rsplit(".", 1)[0] + ".mp4"
+                        if os.path.exists(actual_file) and os.path.getsize(actual_file) > 1000:
+                            actual_file = _ensure_mp4_video_with_audio(actual_file)
+                            creator = info.get("uploader") or info.get("channel") or "Instagram Creator"
+                            title = (info.get("title") or info.get("description") or "").strip()
+                            if len(title) > 180:
+                                title = title[:177] + "..."
+                            caption = (
+                                f"🎞 **Instagram Reel Downloaded (MP4)**\n"
+                                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                                f"👤 **Creator:** `@{creator}`\n"
+                                f"🔗 **URL:** https://instagram.com/reel/{shortcode}/\n"
+                            )
+                            if title:
+                                caption += f"📝 **Caption:** {title}\n"
+                            caption += (
+                                f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                                f"👑 **Developer:** [{DEV_NAME}]({DEV_PORTFOLIO}) | V{BOT_VERSION}\n"
+                                f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                            )
+                            return ([(actual_file, True, caption)], f"✅ Downloaded reel {shortcode}")
+            except Exception as ex_ydl:
+                log.info(f"yt-dlp fallback for {shortcode}: {ex_ydl}")
+
+        # Strategy 2: Instaloader Engine (Clean HD Stream & Metadata extraction)
         if INSTA_OK:
             try:
                 L = instaloader.Instaloader(
@@ -1460,12 +1653,13 @@ def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
                                 if chunk:
                                     f.write(chunk)
                     if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                        out_file = _ensure_mp4_video_with_audio(out_file)
                         owner = post.owner_username or "instagram_user"
                         caption_snippet = (post.caption or "").strip()
                         if len(caption_snippet) > 180:
                             caption_snippet = caption_snippet[:177] + "..."
                         caption = (
-                            f"🎞 **Instagram Reel Downloaded**\n"
+                            f"🎞 **Instagram Reel Downloaded (MP4)**\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"👤 **Creator:** `@{owner}`\n"
                             f"🔗 **URL:** https://instagram.com/reel/{shortcode}/\n"
@@ -1481,7 +1675,7 @@ def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
             except Exception as ex:
                 log.info(f"Instaloader reel error for {shortcode}: {ex}")
 
-        # Strategy 2: Direct Embed captioned parse fallback
+        # Strategy 3: Direct Embed captioned parse fallback
         embed_url = f"https://www.instagram.com/reel/{shortcode}/embed/captioned/"
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
@@ -1498,8 +1692,9 @@ def _download_ig_reels(target_input: str) -> Tuple[List[Tuple[str, bool, str]], 
                     vid_url = video_matches[0].replace(r"\u0026", "&").replace("&amp;", "&")
                     fp = _download_media_url_to_file(vid_url, is_video=True)
                     if fp:
+                        fp = _ensure_mp4_video_with_audio(fp)
                         caption = (
-                            f"🎞 **Instagram Reel Downloaded**\n"
+                            f"🎞 **Instagram Reel Downloaded (MP4)**\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                             f"🔗 **URL:** https://instagram.com/reel/{shortcode}/\n"
                             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -4158,11 +4353,11 @@ async def _cmd_dispatch(event):
             sent_count = 0
             for file_path, is_vid, caption in items:
                 try:
-                    await client.send_file(
+                    await _send_media_item(
                         event.chat_id,
                         file_path,
+                        is_vid=is_vid,
                         caption=caption,
-                        video=is_vid,
                         reply_to=event.reply_to_msg_id
                     )
                     sent_count += 1
@@ -4192,11 +4387,11 @@ async def _cmd_dispatch(event):
         if items:
             for file_path, is_vid, caption in items:
                 try:
-                    await client.send_file(
+                    await _send_media_item(
                         event.chat_id,
                         file_path,
+                        is_vid=is_vid,
                         caption=caption,
-                        video=is_vid,
                         reply_to=event.reply_to_msg_id
                     )
                 except Exception as e:
@@ -4229,12 +4424,11 @@ async def _cmd_dispatch(event):
         if items:
             for file_path, is_vid, caption in items:
                 try:
-                    await client.send_file(
+                    await _send_media_item(
                         event.chat_id,
                         file_path,
+                        is_vid=is_vid,
                         caption=caption,
-                        video=is_vid,
-                        supports_streaming=True,
                         reply_to=event.reply_to_msg_id
                     )
                 except Exception as e:
@@ -6814,12 +7008,11 @@ async def on_new_message(event):
                     if items:
                         for file_path, is_vid, caption in items:
                             try:
-                                await client.send_file(
+                                await _send_media_item(
                                     target_chat_id,
                                     file_path,
+                                    is_vid=is_vid,
                                     caption=caption,
-                                    video=is_vid,
-                                    supports_streaming=True,
                                     reply_to=target_msg_id
                                 )
                             except Exception as ex_send:
