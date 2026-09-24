@@ -6,43 +6,6 @@ A production-ready, ultra-fast Telegram **userbot (selfbot)** built with [Teleth
 
 ---
 
-## 📌 Table of Contents
-
-- [What This Project Is](#-what-this-project-is)
-- [How It Works](#-how-it-works)
-- [Architecture Overview](#-architecture-overview)
-- [Key Features](#-key-features)
-- [Project Structure](#-project-structure)
-- [Requirements](#-requirements)
-- [Getting Telegram API Credentials](#-getting-telegram-api-credentials)
-- [Generating a StringSession](#-generating-a-stringsession)
-- [Local Setup](#-local-setup)
-- [Deploying on Render](#-deploying-on-render)
-- [Environment Variables](#-environment-variables)
-- [📖 Full Command Reference (200+ Commands)](#-full-command-reference-200-commands)
-  - [1. 🤖 Info & Telegram](#1--info--telegram)
-  - [2. 🛡 Security & OSINT](#2--security--osint)
-  - [3. 🛠 Productivity & Utilities](#3--productivity--utilities)
-  - [4. 👤 User & Stealth](#4--user--stealth)
-  - [5. 🧩 Moderation](#5--moderation)
-  - [6. 📡 Broadcast & Messaging](#6--broadcast--messaging)
-  - [7. 🎨 Text & Font Styles](#7--text--font-styles)
-  - [8. 🎉 Fun & Games](#8--fun--games)
-  - [9. 💰 Crypto & Financial Markets](#9--crypto--financial-markets)
-  - [10. ⚙️ System & Diagnostics](#10-️-system--diagnostics)
-- [🌙 AFK System — In Depth](#-afk-system--in-depth)
-- [🛡 Moderation System — In Depth](#-moderation-system--in-depth)
-- [📡 Broadcast System — In Depth](#-broadcast-system--in-depth)
-- [🛠 Reliability, Auto-Fix & Crash Recovery](#-reliability-auto-fix--crash-recovery)
-- [🩺 Health Server & Uptime](#-health-server--uptime)
-- [❓ Frequently Asked Questions](#-frequently-asked-questions)
-- [🩹 Troubleshooting](#-troubleshooting)
-- [📄 License](#-license)
-- [⚠️ Disclaimer](#-disclaimer)
-- [👤 Credits](#-credits)
-
----
-
 ## 🧠 What This Project Is
 
 This is a **selfbot** — it runs on your **own personal Telegram account** (not a Bot API bot with a `@BotFather` token). It logs in as *you*, using Telethon's MTProto client library, and listens for special `.command` messages that you type from your own account.
